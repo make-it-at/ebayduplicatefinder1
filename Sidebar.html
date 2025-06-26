@@ -1032,7 +1032,7 @@
     <div class="header">
       <h1>eBay出品管理ツール</h1>
       <div class="version">
-        <span id="version-display">バージョン: <span id="client-version">1.6.1</span></span>
+                    <span id="version-display">バージョン: <span id="client-version">1.6.2</span></span>
         <span id="version-indicator" class="version-match material-icons" style="display:none">check_circle</span>
       </div>
     </div>
@@ -1194,7 +1194,7 @@
 
     <script>
       // グローバル変数
-      const CLIENT_VERSION = '1.6.1'; // クライアント側のバージョン
+      const CLIENT_VERSION = '1.6.2'; // クライアント側のバージョン
       let currentTab = 'auto';  // 初期タブを自動処理に変更
       let serverVersion = '';
       let fileContent = null;
@@ -1331,6 +1331,11 @@
         
         // 初期タブを表示（自動処理タブをデフォルトに）
         showTab('auto');
+        
+        // 権限チェックを1秒後に実行（他の初期化処理が完了してから）
+        setTimeout(function() {
+          checkPermissions();
+        }, 1000);
       });
       
       /**
@@ -1789,6 +1794,12 @@
             if (cancelBtn) cancelBtn.style.display = 'none'; // キャンセルボタン非表示
             if (progressStatus) {
               progressStatus.style.display = 'none';
+            }
+            
+            // PERMISSION_DENIEDエラーの場合は専用処理
+            if (error && error.message && error.message.indexOf('PERMISSION_DENIED') !== -1) {
+              showPermissionError('自動処理の実行に必要な権限がありません。');
+              return;
             }
             
             // エラーメッセージを表示
@@ -2829,6 +2840,72 @@
           console.error('handleError関数の実行中に別のエラーが発生しました:', e);
           alert('エラー処理中に問題が発生しました。');
         }
+      }
+
+      // 権限エラー専用のメッセージ表示関数
+      function showPermissionError(message) {
+        console.error('権限エラー:', message);
+        
+        // 統一メッセージエリアに権限エラーを表示
+        showUnifiedMessage(`
+          <div style="color: #d32f2f; margin-bottom: 10px;">
+            <strong>権限エラーが発生しました</strong>
+          </div>
+          <div style="margin-bottom: 10px;">
+            ${message || 'スクリプトの実行に必要な権限がありません。'}
+          </div>
+          <div style="font-size: 12px; color: #666;">
+            <strong>解決方法:</strong><br>
+            1. スクリプトエディタを開いてください<br>
+            2. 任意の関数を実行して権限を再承認してください<br>
+            3. このページを再読み込みしてください
+          </div>
+        `, 'error');
+        
+        // UI状態をリセット
+        resetUIState();
+      }
+
+      // 権限チェック関数
+      function checkPermissions() {
+        console.log('権限チェックを実行します');
+        
+        google.script.run
+          .withSuccessHandler(function(result) {
+            console.log('権限チェック結果:', result);
+            
+            if (!result.overall) {
+              let errorMessage = '以下の権限が不足しています:<br>';
+              result.errors.forEach(function(error) {
+                errorMessage += '• ' + error + '<br>';
+              });
+              
+              if (result.warnings.length > 0) {
+                errorMessage += '<br>警告:<br>';
+                result.warnings.forEach(function(warning) {
+                  errorMessage += '• ' + warning + '<br>';
+                });
+              }
+              
+              showPermissionError(errorMessage);
+            } else {
+              console.log('すべての権限が正常に確認されました');
+              if (result.warnings.length > 0) {
+                console.warn('権限チェック警告:', result.warnings);
+              }
+            }
+          })
+          .withFailureHandler(function(error) {
+            console.error('権限チェック実行エラー:', error);
+            
+            // PERMISSION_DENIEDエラーの場合は専用処理
+            if (error && error.message && error.message.indexOf('PERMISSION_DENIED') !== -1) {
+              showPermissionError('スクリプトの実行権限がありません。');
+            } else {
+              showPermissionError('権限チェック中にエラーが発生しました: ' + (error.message || error));
+            }
+          })
+          .checkAllPermissions();
       }
 
       /**

@@ -8,7 +8,7 @@
 var EbayTool = (function() {
   // プライベート変数と定数
   const CONFIG = {
-    VERSION: '1.6.1',
+    VERSION: '1.6.2',
     SHEET_NAMES: {
       IMPORT: 'インポートデータ',
       DUPLICATES: '重複リスト',
@@ -2215,10 +2215,31 @@ function generateExportCsv() {
 }
 
 /**
+ * スクリプトプロパティの権限をチェックする関数
+ * @return {boolean} 権限があるかどうか
+ */
+function checkScriptPropertiesPermission() {
+  try {
+    const scriptProperties = PropertiesService.getScriptProperties();
+    scriptProperties.getProperty('__permission_test__');
+    return true;
+  } catch (error) {
+    console.warn('スクリプトプロパティへのアクセス権限がありません:', error.toString());
+    return false;
+  }
+}
+
+/**
  * 一時ファイルを削除する関数
  */
 function deleteTemporaryFile() {
   try {
+    // 権限チェック
+    if (!checkScriptPropertiesPermission()) {
+      console.log('一時ファイル削除: スクリプトプロパティの権限がないため、削除処理をスキップします');
+      return;
+    }
+    
     const fileId = PropertiesService.getScriptProperties().getProperty('TEMP_FILE_ID');
     if (fileId) {
       const file = DriveApp.getFileById(fileId);
@@ -2791,6 +2812,106 @@ function logAutoProcess(operation, result) {
  */
 function getVersion() {
   return EbayTool.getVersion();
+}
+
+/**
+ * 権限状況をチェックする関数
+ * @return {Object} 権限チェック結果
+ */
+function checkAllPermissions() {
+  const result = {
+    overall: true,
+    permissions: {},
+    errors: [],
+    warnings: []
+  };
+
+  try {
+    // PropertiesService (UserProperties) の権限チェック
+    try {
+      const userProperties = PropertiesService.getUserProperties();
+      userProperties.getProperty('__permission_test__');
+      result.permissions.userProperties = { success: true, hasPermission: true };
+    } catch (error) {
+      const isPermissionError = error.toString().indexOf('PERMISSION_DENIED') !== -1;
+      result.permissions.userProperties = { 
+        success: false, 
+        hasPermission: !isPermissionError,
+        error: error.toString()
+      };
+      if (isPermissionError) {
+        result.errors.push('ユーザープロパティへのアクセス権限がありません');
+        result.overall = false;
+      } else {
+        result.warnings.push('ユーザープロパティアクセスエラー: ' + error.toString());
+      }
+    }
+
+    // PropertiesService (ScriptProperties) の権限チェック
+    try {
+      const scriptProperties = PropertiesService.getScriptProperties();
+      scriptProperties.getProperty('__permission_test__');
+      result.permissions.scriptProperties = { success: true, hasPermission: true };
+    } catch (error) {
+      const isPermissionError = error.toString().indexOf('PERMISSION_DENIED') !== -1;
+      result.permissions.scriptProperties = { 
+        success: false, 
+        hasPermission: !isPermissionError,
+        error: error.toString()
+      };
+      if (isPermissionError) {
+        result.errors.push('スクリプトプロパティへのアクセス権限がありません');
+        result.overall = false;
+      } else {
+        result.warnings.push('スクリプトプロパティアクセスエラー: ' + error.toString());
+      }
+    }
+
+    // SpreadsheetApp の権限チェック
+    try {
+      const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+      spreadsheet.getName(); // 基本的なアクセステスト
+      result.permissions.spreadsheet = { success: true, hasPermission: true };
+    } catch (error) {
+      const isPermissionError = error.toString().indexOf('PERMISSION_DENIED') !== -1;
+      result.permissions.spreadsheet = { 
+        success: false, 
+        hasPermission: !isPermissionError,
+        error: error.toString()
+      };
+      if (isPermissionError) {
+        result.errors.push('スプレッドシートへのアクセス権限がありません');
+        result.overall = false;
+      } else {
+        result.warnings.push('スプレッドシートアクセスエラー: ' + error.toString());
+      }
+    }
+
+    // DriveApp の権限チェック（オプション）
+    try {
+      DriveApp.getRootFolder(); // 基本的なアクセステスト
+      result.permissions.drive = { success: true, hasPermission: true };
+    } catch (error) {
+      const isPermissionError = error.toString().indexOf('PERMISSION_DENIED') !== -1;
+      result.permissions.drive = { 
+        success: false, 
+        hasPermission: !isPermissionError,
+        error: error.toString()
+      };
+      if (isPermissionError) {
+        result.warnings.push('Driveへのアクセス権限がありません（一部機能が制限されます）');
+      } else {
+        result.warnings.push('Driveアクセスエラー: ' + error.toString());
+      }
+    }
+
+  } catch (error) {
+    logError('checkAllPermissions', error);
+    result.overall = false;
+    result.errors.push('権限チェック中に予期しないエラーが発生しました: ' + error.toString());
+  }
+
+  return result;
 }
 
 /**
