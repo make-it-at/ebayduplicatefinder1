@@ -1,0 +1,10 @@
+{
+  "timeZone": "Asia/Tokyo",
+  "dependencies": {
+  },
+  "exceptionLogging": "STACKDRIVER",
+  "oauthScopes": ["https://www.googleapis.com/auth/spreadsheets.currentonly", "https://www.googleapis.com/auth/script.container.ui"],
+  "runtimeVersion": "V8",
+  "sheets": {
+  }
+}

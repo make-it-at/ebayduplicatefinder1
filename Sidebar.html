@@ -1,0 +1,3338 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <base target="_top">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
+    <style>
+      /* 全体のスタイル */
+      body {
+        font-family: 'Noto Sans JP', 'Roboto', Arial, sans-serif;
+        font-size: 14px;
+        color: #374151;
+        background-color: #F9FAFB;
+        margin: 0;
+        padding: 0;
+        overflow-y: auto;
+      }
+      
+      /* 非表示クラス */
+      .hidden {
+        display: none !important;
+      }
+      
+      /* ヘッダー */
+      .header {
+        background: linear-gradient(135deg, #4F46E5 0%, #6366F1 100%);
+        color: white;
+        padding: 15px;
+        text-align: center;
+        position: relative;
+        border-radius: 0 0 8px 8px;
+        box-shadow: 0 2px 10px rgba(79, 70, 229, 0.3);
+      }
+      
+      .header h1 {
+        margin: 0;
+        font-size: 18px;
+        font-weight: bold;
+      }
+      
+      /* バージョン表示 */
+      .version {
+        font-size: 12px;
+        opacity: 0.8;
+        margin-top: 5px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      
+      .version-match {
+        color: #10B981;
+        margin-left: 5px;
+        font-size: 14px;
+      }
+      
+      .version-mismatch {
+        color: #EF4444;
+        margin-left: 5px;
+        font-size: 14px;
+      }
+      
+      /* 自動処理タブの改善 */
+      .auto-process-container {
+        background-color: white;
+        border-radius: 12px;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+        padding: 20px;
+        margin: 15px 0;
+        transition: all 0.3s ease;
+      }
+      
+      .auto-process-container .section-title {
+        display: flex;
+        align-items: center;
+        margin-bottom: 15px;
+      }
+      
+      .auto-process-container .section-title span {
+        color: #4F46E5;
+        margin-right: 8px;
+        font-size: 24px;
+      }
+      
+      .auto-process-container .section-title h2 {
+        font-size: 18px;
+        margin: 0;
+        color: #111827;
+      }
+      
+      .section-description {
+        margin-bottom: 20px;
+        color: #4B5563;
+        line-height: 1.5;
+      }
+      
+      .processing-indicator {
+        display: none;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        margin: 20px 0;
+      }
+      
+      .spinner {
+        width: 40px;
+        height: 40px;
+        border: 4px solid rgba(79, 70, 229, 0.2);
+        border-radius: 50%;
+        border-top-color: #4F46E5;
+        animation: spin 1s linear infinite;
+        margin-bottom: 15px;
+      }
+      
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      
+      .processing-text {
+        color: #4F46E5;
+        font-weight: 500;
+        margin-top: 10px;
+      }
+
+      /* 手順カード */
+      .step-card {
+        background-color: #F9FAFB;
+        border-radius: 8px;
+        padding: 15px;
+        margin-bottom: 10px;
+        border-left: 3px solid #4F46E5;
+      }
+
+      .step-card-title {
+        display: flex;
+        align-items: center;
+        margin-bottom: 8px;
+      }
+
+      .step-card-title .material-icons {
+        margin-right: 8px;
+        color: #4F46E5;
+      }
+
+      .step-card-title h3 {
+        margin: 0;
+        font-size: 15px;
+        color: #111827;
+      }
+
+      .step-card-desc {
+        color: #6B7280;
+        font-size: 13px;
+        margin: 0;
+      }
+      
+      /* タブメニュー */
+      .tab-menu {
+        display: flex;
+        background-color: white;
+        border-radius: 12px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.05), 0 1px 2px rgba(0,0,0,0.05);
+        margin: 10px 0 20px 0;
+        overflow: hidden;
+      }
+      
+      .tab-btn {
+        flex: 1;
+        border: none;
+        background: none;
+        padding: 12px 8px;
+        font-size: 13px;
+        color: #6B7280;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        position: relative;
+        font-weight: 500;
+        border-bottom: 2px solid transparent;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+      }
+      
+      .tab-icon {
+        font-size: 20px;
+        margin-bottom: 5px;
+        color: #9CA3AF;
+        transition: all 0.2s ease;
+      }
+      
+      .tab-text {
+        font-size: 12px;
+        transition: all 0.2s ease;
+      }
+      
+      .tab-btn:hover {
+        background-color: #F9FAFB;
+        color: #4F46E5;
+      }
+      
+      .tab-btn:hover .tab-icon {
+        color: #6366F1;
+      }
+      
+      .tab-btn.active {
+        color: #4F46E5;
+        background-color: #F5F7FF;
+        border-bottom: 2px solid #4F46E5;
+        font-weight: 700;
+      }
+      
+      .tab-btn.active .tab-icon {
+        color: #4F46E5;
+      }
+      
+      /* コンテンツエリア */
+      .content {
+        padding: 15px;
+      }
+      
+      /* ステップインジケーター */
+      .steps {
+        display: flex;
+        margin: 20px 0;
+        position: relative;
+      }
+      
+      .step {
+        flex: 1;
+        text-align: center;
+        position: relative;
+        z-index: 1;
+      }
+      
+      .step-circle {
+        width: 36px;
+        height: 36px;
+        line-height: 36px;
+        border-radius: 50%;
+        background-color: #E5E7EB;
+        margin: 0 auto 5px;
+        color: #6B7280;
+        font-weight: 500;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+        transition: all 0.3s ease;
+      }
+      
+      .step.active .step-circle {
+        background-color: #4F46E5;
+        color: white;
+        box-shadow: 0 3px 6px rgba(79, 70, 229, 0.3);
+        transform: scale(1.1);
+      }
+      
+      .step.complete .step-circle {
+        background-color: #10B981;
+        color: white;
+        box-shadow: 0 2px 4px rgba(16, 185, 129, 0.3);
+      }
+      
+      .step-label {
+        font-size: 12px;
+        color: #6B7280;
+        transition: all 0.2s ease;
+      }
+      
+      .step.active .step-label {
+        color: #4F46E5;
+        font-weight: bold;
+        transform: scale(1.05);
+      }
+      
+      .step-line {
+        position: absolute;
+        top: 18px;
+        left: 18%;
+        right: 18%;
+        height: 2px;
+        background-color: #E5E7EB;
+        z-index: 0;
+      }
+      
+      /* アクションボタン */
+      .action-btn {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 100%;
+        padding: 12px 0;
+        margin: 15px 0;
+        background: linear-gradient(135deg, #4F46E5 0%, #6366F1 100%);
+        color: white;
+        border: none;
+        border-radius: 8px;
+        font-size: 16px;
+        font-weight: bold;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        text-align: center;
+        min-height: 44px;
+        box-shadow: 0 2px 5px rgba(99, 102, 241, 0.2);
+      }
+      
+      .action-btn:hover {
+        background: linear-gradient(135deg, #4338CA 0%, #4F46E5 100%);
+        transform: translateY(-1px);
+        box-shadow: 0 4px 8px rgba(99, 102, 241, 0.3);
+      }
+      
+      .action-btn:active {
+        transform: translateY(1px);
+        box-shadow: 0 1px 3px rgba(99, 102, 241, 0.2);
+      }
+      
+      .action-btn:focus {
+        outline: none;
+        box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.3);
+      }
+      
+      .action-btn:disabled {
+        background: linear-gradient(135deg, #9CA3AF 0%, #D1D5DB 100%);
+        cursor: not-allowed;
+        opacity: 0.7;
+        transform: none;
+        box-shadow: none;
+      }
+      
+      .btn-icon {
+        margin-right: 8px;
+        font-size: 18px;
+      }
+      
+      /* モダンなボタン */
+      .modern-btn {
+        border-radius: 8px;
+        font-weight: 600;
+        text-transform: none;
+        letter-spacing: 0.01em;
+        padding: 12px 16px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+        transition: all 0.2s ease;
+      }
+      
+      .modern-success-btn {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: linear-gradient(135deg, #10B981 0%, #059669 100%);
+        color: white;
+        border: none;
+        border-radius: 8px;
+        padding: 10px 16px;
+        font-size: 15px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        box-shadow: 0 2px 5px rgba(16, 185, 129, 0.2);
+      }
+      
+      .modern-success-btn:hover {
+        background: linear-gradient(135deg, #059669 0%, #047857 100%);
+        transform: translateY(-1px);
+        box-shadow: 0 4px 8px rgba(16, 185, 129, 0.3);
+      }
+      
+      /* セクション */
+      .section {
+        margin-bottom: 24px;
+        background-color: white;
+        border-radius: 12px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.05), 0 1px 2px rgba(0,0,0,0.05);
+        padding: 20px;
+        transition: all 0.3s ease;
+      }
+      
+      .section:hover {
+        box-shadow: 0 4px 6px rgba(0,0,0,0.05), 0 2px 4px rgba(0,0,0,0.05);
+      }
+      
+      .section-title {
+        font-size: 17px;
+        font-weight: 700;
+        margin-bottom: 12px;
+        color: #111827;
+        display: flex;
+        align-items: center;
+      }
+      
+      /* メッセージ表示 */
+      .message {
+        padding: 14px;
+        border-radius: 8px;
+        margin: 15px 0;
+        font-weight: 500;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+        transition: all 0.3s ease;
+        display: flex;
+        align-items: flex-start;
+      }
+      
+      .message.success {
+        background-color: #ECFDF5;
+        border-left: 4px solid #10B981;
+        color: #065F46;
+      }
+      
+      .message.error {
+        background-color: #FEF2F2;
+        border-left: 4px solid #EF4444;
+        color: #991B1B;
+      }
+      
+      .message.warning {
+        background-color: #FFFBEB;
+        border-left: 4px solid #F59E0B;
+        color: #92400E;
+      }
+      
+      .message.info {
+        background-color: #EEF2FF;
+        border-left: 4px solid #6366F1;
+        color: #3730A3;
+      }
+      
+      /* プログレスバー */
+      .progress-container {
+        height: 8px;
+        background-color: #E5E7EB;
+        border-radius: 4px;
+        margin: 15px 0;
+        overflow: hidden;
+        box-shadow: inset 0 1px 2px rgba(0,0,0,0.05);
+      }
+      
+      .progress-bar {
+        height: 100%;
+        width: 0%;
+        background: linear-gradient(90deg, #4F46E5 0%, #6366F1 100%);
+        transition: width 0.3s ease-in-out;
+        border-radius: 4px;
+      }
+      
+      /* モダンなファイルアップロード */
+      .modern-file-upload {
+        margin: 16px 0;
+      }
+      
+      /* ファイルドロップエリアの改善 */
+      .file-drop-area {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 30px 20px;
+        border: 2px dashed #6366F1;
+        border-radius: 8px;
+        background-color: #EEF2FF;
+        transition: all 0.3s ease;
+        cursor: pointer;
+        margin: 20px 0;
+      }
+      
+      .file-drop-area:hover, .file-drop-area.dragover {
+        border-color: #4F46E5;
+        background-color: #E0E7FF;
+        transform: translateY(-2px);
+        box-shadow: 0 4px 6px rgba(79, 70, 229, 0.1);
+      }
+      
+      .file-icon-large {
+        color: #4F46E5;
+        margin-bottom: 15px;
+      }
+      
+      .file-icon-large .material-icons {
+        font-size: 48px;
+      }
+      
+      .or-divider {
+        position: relative;
+        margin: 15px 0;
+        color: #6B7280;
+        text-align: center;
+        font-size: 14px;
+      }
+      
+      .or-divider:before, .or-divider:after {
+        position: absolute;
+        top: 50%;
+        content: '';
+        width: 40px;
+        height: 1px;
+        background: #D1D5DB;
+      }
+      
+      .or-divider:before {
+        left: -50px;
+      }
+      
+      .or-divider:after {
+        right: -50px;
+      }
+      
+      .file-select-btn {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 8px 16px;
+        background-color: white;
+        color: #4F46E5;
+        border: 1px solid #6366F1;
+        border-radius: 6px;
+        font-size: 14px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.2s ease;
+      }
+      
+      .file-select-btn:hover {
+        background-color: #4F46E5;
+        color: white;
+      }
+      
+      .file-select-btn .material-icons {
+        margin-right: 8px;
+      }
+      
+      /* ファイルプレビューの改善 */
+      .file-preview {
+        background-color: white;
+        border-radius: 8px;
+        padding: 12px 15px;
+        margin-top: 15px;
+        border: 1px solid #E5E7EB;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+        width: 90%;
+        max-width: 400px;
+      }
+      
+      .file-preview-info {
+        display: flex;
+        align-items: center;
+      }
+      
+      .file-icon {
+        margin-right: 12px;
+        color: #4F46E5;
+      }
+      
+      .file-details {
+        flex: 1;
+      }
+      
+      .file-name {
+        font-weight: 500;
+        color: #111827;
+        margin-bottom: 4px;
+      }
+      
+      .file-size, .file-type {
+        font-size: 12px;
+        color: #6B7280;
+      }
+      
+      .file-remove-btn {
+        background: none;
+        border: none;
+        color: #9CA3AF;
+        cursor: pointer;
+        width: 28px;
+        height: 28px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 50%;
+        transition: all 0.2s ease;
+      }
+      
+      .file-remove-btn:hover {
+        background-color: #FEE2E2;
+        color: #EF4444;
+      }
+      
+      /* 自動処理セクション用のスタイル更新 */
+      .auto-process-section {
+        margin: 20px 0;
+        padding: 20px;
+        background-color: white;
+        border-radius: 12px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.05), 0 1px 2px rgba(0,0,0,0.05);
+        transition: all 0.3s ease;
+      }
+      
+      .auto-process-section:hover {
+        box-shadow: 0 4px 6px rgba(0,0,0,0.05), 0 2px 4px rgba(0,0,0,0.05);
+      }
+      
+      .auto-process-title {
+        font-weight: 700;
+        font-size: 17px;
+        margin-bottom: 10px;
+        color: #111827;
+        display: flex;
+        align-items: center;
+      }
+      
+      .auto-process-title .material-icons {
+        margin-right: 10px;
+        color: #6366F1;
+      }
+      
+      .auto-process-desc {
+        color: #4B5563;
+        margin-bottom: 16px;
+      }
+      
+      .progress-area {
+        margin-top: 20px;
+        padding: 15px;
+        background-color: #F9FAFB;
+        border-radius: 8px;
+        border: 1px solid #E5E7EB;
+      }
+      
+      .status-message {
+        margin-bottom: 15px;
+        padding: 10px;
+        border-radius: 6px;
+        background-color: #F3F4F6;
+        font-weight: 500;
+      }
+      
+      .status-message.success-message {
+        color: #10B981;
+        background-color: #ECFDF5;
+      }
+      
+      .status-message.error-message {
+        color: #EF4444;
+        background-color: #FEF2F2;
+      }
+      
+      #auto-steps-container {
+        margin: 15px 0;
+      }
+      
+      .step-item {
+        display: flex;
+        padding: 10px;
+        border-radius: 6px;
+        margin-bottom: 8px;
+        background-color: white;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+        transition: all 0.2s ease;
+      }
+      
+      .step-name {
+        width: 40%;
+        font-weight: 500;
+        display: flex;
+        align-items: center;
+      }
+      
+      .step-icon {
+        font-size: 18px;
+        margin-right: 8px;
+        color: #6B7280;
+      }
+      
+      .step-status {
+        width: 20%;
+        text-align: center;
+        padding: 4px 8px;
+        border-radius: 4px;
+        color: #6B7280;
+        font-size: 13px;
+        font-weight: 500;
+      }
+      
+      .step-status.running {
+        color: #3B82F6;
+        background-color: #EFF6FF;
+      }
+      
+      .step-status.success {
+        color: #10B981;
+        background-color: #ECFDF5;
+      }
+      
+      .step-status.error {
+        color: #EF4444;
+        background-color: #FEF2F2;
+      }
+      
+      .step-status.skipped {
+        color: #9CA3AF;
+        background-color: #F3F4F6;
+      }
+      
+      .step-detail {
+        width: 40%;
+        font-size: 12px;
+        color: #6B7280;
+        padding-left: 10px;
+      }
+      
+      .final-message {
+        margin: 15px 0;
+        padding: 12px;
+        border-radius: 8px;
+        font-weight: 500;
+      }
+      
+      .final-message.success-message {
+        color: #047857;
+        background-color: #D1FAE5;
+      }
+      
+      .final-message.error-message {
+        color: #B91C1C;
+        background-color: #FEE2E2;
+      }
+      
+      #auto-download-area {
+        margin-top: 20px;
+        text-align: center;
+      }
+      
+      /* レスポンシブ対応 */
+      @media (max-width: 480px) {
+        .header {
+          padding: 12px;
+        }
+        
+        .content {
+          padding: 12px;
+        }
+        
+        .section, .auto-process-section {
+          padding: 16px;
+        }
+        
+        .action-btn {
+          padding: 14px 0;
+          font-size: 15px;
+        }
+        
+        .tab-btn {
+          font-size: 12px;
+          padding: 10px 4px;
+        }
+        
+        .step-label {
+          font-size: 11px;
+        }
+      }
+
+      /* アコーディオンスタイル */
+      .accordion-container {
+        margin-bottom: 15px;
+        border-radius: 8px;
+        overflow: hidden;
+      }
+
+      .accordion-trigger {
+        width: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: flex-start;
+        padding: 10px 15px;
+        background-color: #EEF2FF;
+        border: 1px solid #E0E7FF;
+        border-radius: 6px;
+        color: #4F46E5;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        text-align: left;
+      }
+
+      .accordion-trigger:hover {
+        background-color: #E0E7FF;
+      }
+
+      .accordion-trigger .material-icons {
+        margin-right: 8px;
+        font-size: 18px;
+      }
+
+      .accordion-icon {
+        margin-left: auto;
+        transition: transform 0.3s ease;
+      }
+
+      .accordion-trigger.active .accordion-icon {
+        transform: rotate(180deg);
+      }
+
+      .accordion-content {
+        max-height: 0;
+        overflow: hidden;
+        transition: max-height 0.3s ease-out;
+        background-color: #F9FAFB;
+        border-radius: 0 0 6px 6px;
+      }
+
+      /* コンパクトステップカード */
+      .step-cards {
+        padding: 15px 10px 5px;
+      }
+
+      .step-card {
+        background-color: white;
+        border-radius: 6px;
+        padding: 10px;
+        margin-bottom: 8px;
+        border-left: 3px solid #4F46E5;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+      }
+
+      .step-card-title {
+        display: flex;
+        align-items: center;
+        margin-bottom: 5px;
+      }
+
+      .step-card-title .material-icons {
+        font-size: 16px;
+        margin-right: 6px;
+        color: #4F46E5;
+      }
+
+      .step-card-title h3 {
+        margin: 0;
+        font-size: 14px;
+        color: #111827;
+        font-weight: 600;
+      }
+
+      .step-card-desc {
+        color: #6B7280;
+        font-size: 12px;
+        margin: 0;
+        padding-left: 22px;
+      }
+
+      /* 進捗ステータス表示 */
+      .progress-status {
+        display: flex;
+        align-items: center;
+        margin: 10px 0;
+        padding: 8px 12px;
+        background-color: #ECFDF5;
+        border-radius: 6px;
+        border-left: 3px solid #10B981;
+      }
+
+      .spinner-sm {
+        width: 16px;
+        height: 16px;
+        border: 2px solid rgba(16, 185, 129, 0.2);
+        border-radius: 50%;
+        border-top-color: #10B981;
+        animation: spin 1s linear infinite;
+        margin-right: 10px;
+      }
+
+      #auto-progress-message {
+        color: #065F46;
+        font-size: 13px;
+        flex: 1;
+      }
+
+      /* 結果メッセージ */
+      .result-message {
+        margin: 15px 0;
+        padding: 12px 15px;
+        border-radius: 8px;
+        background-color: #F3F4F6;
+        border-left: 4px solid #10B981;
+        color: #065F46;
+        font-size: 13px;
+      }
+
+      .result-message.error {
+        background-color: #FEF2F2;
+        border-left: 4px solid #EF4444;
+        color: #991B1B;
+      }
+
+      /* メンテナンスセクション */
+      .maintenance-section {
+        margin-top: 15px;
+        padding: 12px;
+        background-color: white;
+        border-radius: 8px;
+        border: 1px solid #E5E7EB;
+      }
+
+      .section-title-sm {
+        display: flex;
+        align-items: center;
+        margin-bottom: 10px;
+      }
+
+      .section-title-sm .material-icons {
+        font-size: 18px;
+        margin-right: 8px;
+        color: #6B7280;
+      }
+
+      .section-title-sm h3 {
+        margin: 0;
+        font-size: 14px;
+        color: #374151;
+        font-weight: 600;
+      }
+
+      .action-btn-secondary {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 100%;
+        padding: 8px 0;
+        margin: 5px 0;
+        background-color: #F3F4F6;
+        color: #4B5563;
+        border: 1px solid #E5E7EB;
+        border-radius: 6px;
+        font-size: 13px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.2s ease;
+      }
+
+      .action-btn-secondary:hover {
+        background-color: #E5E7EB;
+        color: #111827;
+      }
+
+      .action-btn-secondary .material-icons {
+        font-size: 16px;
+        margin-right: 6px;
+      }
+      
+      /* 処理完了表示用のスタイル */
+      .result-message {
+        margin-top: 15px;
+        padding: 16px;
+        border-radius: 8px;
+        display: flex;
+        align-items: flex-start;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      }
+      
+      .result-message.success {
+        background-color: #D1FAE5;
+        border-left: 4px solid #10B981;
+        color: #065F46;
+      }
+      
+      .result-message.error {
+        background-color: #FEE2E2;
+        border-left: 4px solid #EF4444;
+        color: #991B1B;
+      }
+      
+      .completion-icon, .error-icon {
+        font-size: 24px;
+        margin-right: 12px;
+        font-weight: bold;
+      }
+      
+      .completion-message h3, .error-message h3 {
+        margin: 0 0 8px 0;
+        font-size: 16px;
+        font-weight: bold;
+      }
+      
+      .completion-message p, .error-message p {
+        margin: 4px 0;
+        font-size: 13px;
+      }
+      
+      .completion-icon {
+        color: #10B981;
+      }
+      
+      .error-icon {
+        color: #EF4444;
+      }
+      
+      /* プログレスステータスの強調 */
+      .progress-status {
+        background-color: #EFF6FF;
+        padding: 10px 15px;
+        border-radius: 6px;
+        margin: 12px 0;
+        display: flex;
+        align-items: center;
+      }
+      
+      #auto-progress-message {
+        margin-left: 10px;
+        font-weight: 500;
+        color: #2563EB;
+      }
+      
+      /* スピナーの改良 */
+      .spinner-sm {
+        border: 3px solid #E5E7EB;
+        border-top: 3px solid #2563EB;
+        border-radius: 50%;
+        width: 18px;
+        height: 18px;
+        animation: spin 1s linear infinite;
+      }
+      
+      @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+      }
+    </style>
+  </head>
+  <body>
+    <!-- ヘッダー -->
+    <div class="header">
+      <h1>eBay出品管理ツール</h1>
+      <div class="version">
+        <span id="version-display">バージョン: <span id="client-version">1.6.1</span></span>
+        <span id="version-indicator" class="version-match material-icons" style="display:none">check_circle</span>
+      </div>
+    </div>
+    
+    <div class="content">
+      <!-- タブメニュー -->
+      <div class="tab-menu">
+        <button class="tab-btn active" id="auto-tab-btn" onclick="showTab('auto')">
+          <i class="material-icons tab-icon">bolt</i>
+          <span class="tab-text">自動処理</span>
+        </button>
+        <!-- 管理者モード表示用のボタン（通常は非表示） -->
+        <button class="tab-btn hidden" id="import-tab-btn" onclick="showTab('import')">
+          <i class="material-icons tab-icon">file_download</i>
+          <span class="tab-text">①インポート</span>
+        </button>
+        <button class="tab-btn hidden" id="detect-tab-btn" onclick="showTab('detect')">
+          <i class="material-icons tab-icon">find_in_page</i>
+          <span class="tab-text">②重複検出</span>
+        </button>
+        <button class="tab-btn hidden" id="analysis-tab-btn" onclick="showTab('analysis')">
+          <i class="material-icons tab-icon">analytics</i>
+          <span class="tab-text">③分析</span>
+        </button>
+        <button class="tab-btn hidden" id="export-tab-btn" onclick="showTab('export')">
+          <i class="material-icons tab-icon">file_upload</i>
+          <span class="tab-text">④出力</span>
+        </button>
+        </div>
+      
+      <!-- 自動処理タブ -->
+      <div id="auto-tab" class="tab-content">
+        <div class="content">
+          <div class="auto-process-container">
+            <!-- 統合メッセージ表示エリア（最上部に配置） -->
+            <div id="unified-message" class="message info" style="display:none; margin-bottom: 15px;"></div>
+            
+            <div class="section-title">
+              <h2>eBay重複出品一括処理</h2>
+        </div>
+            
+            <!-- 進捗メッセージ表示エリア -->
+            <div id="auto-progress-status" class="progress-status" style="display:none;">
+              <div class="spinner-sm"></div>
+              <div id="auto-progress-message">処理準備中...</div>
+        </div>
+            
+            <!-- 手順説明 - アコーディオン形式 -->
+            <div class="accordion-container">
+              <button class="accordion-trigger" onclick="toggleAccordion(this)">
+                <span class="material-icons">help_outline</span>使い方を見る
+                <span class="material-icons accordion-icon">expand_more</span>
+              </button>
+              <div class="accordion-content">
+                <!-- 手順説明カード -->
+                <div class="step-cards">
+                  <div class="step-card">
+                    <div class="step-card-title">
+                      <span class="material-icons">file_upload</span>
+                      <h3>1. CSVファイルの準備</h3>
+                    </div>
+                    <p class="step-card-desc">eBay Seller Hubから「All Active Listing」のCSVファイルをダウンロード</p>
+      </div>
+      
+                  <div class="step-card">
+                    <div class="step-card-title">
+                      <span class="material-icons">publish</span>
+                      <h3>2. ファイルをアップロード</h3>
+                    </div>
+                    <p class="step-card-desc">CSVファイルをドラッグ＆ドロップまたはファイル選択から指定</p>
+                  </div>
+                  
+                  <div class="step-card">
+                    <div class="step-card-title">
+                      <span class="material-icons">play_circle</span>
+                      <h3>3. 自動処理を実行</h3>
+                    </div>
+                    <p class="step-card-desc">「自動処理を開始」ボタンをクリックして処理完了を待つ</p>
+        </div>
+        
+                  <div class="step-card">
+                    <div class="step-card-title">
+                      <span class="material-icons">download</span>
+                      <h3>4. CSVファイルの取得</h3>
+                    </div>
+                    <p class="step-card-desc">処理完了後、重複アイテムのCSVが自動ダウンロードされる</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            <!-- ファイルアップロードエリア -->
+            <div id="auto-file-drop-area" class="file-drop-area">
+              <div class="file-icon-large">
+                <span class="material-icons">upload_file</span>
+              </div>
+              <p>CSVファイルをドラッグ&ドロップ</p>
+              <p class="or-divider">または</p>
+              <div class="file-input-container">
+                <input type="file" id="auto-file-upload" accept=".csv" onchange="handleAutoFileInputChange(this)" style="display:none">
+                <button type="button" id="auto-file-select-btn" class="file-select-btn" onclick="handleAutoFileButtonClick()">
+                  <span class="material-icons">attach_file</span>
+                  ファイルを選択
+                </button>
+              </div>
+              <div id="auto-file-preview" class="file-preview" style="display:none;"></div>
+        </div>
+        
+            <!-- 処理ボタン -->
+            <button id="auto-process-btn" class="action-btn" disabled onclick="startAutoProcess()">
+              <span class="material-icons">play_arrow</span> 自動処理を開始
+            </button>
+        
+            <!-- キャンセルボタン -->
+            <button id="auto-cancel-btn" class="action-btn-secondary" style="display:none; margin-top:10px;" onclick="cancelAutoProcess()">
+              <span class="material-icons">cancel</span> 処理をキャンセル
+            </button>
+        
+            <!-- 処理結果表示エリア -->
+            <div id="auto-result-message" class="result-message success" style="display:none; margin-top: 15px; padding: 12px; background-color: #D1FAE5; border-radius: 8px; border-left: 4px solid #10B981; color: #065F46; font-weight: bold;"></div>
+          </div>
+          
+          <!-- メンテナンスセクション - 表示 -->
+          <div class="maintenance-section">
+            <div class="section-title-sm">
+              <span class="material-icons">settings</span>
+              <h3>メンテナンス</h3>
+            </div>
+            <button id="initialize-sheets-btn" onclick="runInitializeSheets(); return false;" class="action-btn-secondary">
+              <span class="material-icons">delete_sweep</span> シートを初期化
+            </button>
+          </div>
+        
+          <!-- デバッグツールセクションを削除 -->
+        </div>
+      </div>
+        
+      <!-- 以下の手動処理セクションは非表示にする -->
+      <div id="import-section" class="section hidden">
+        <!-- 内容はそのまま -->
+      </div>
+      
+      <div id="duplicates-section" class="section hidden">
+        <!-- 内容はそのまま -->
+      </div>
+      
+      <div id="analysis-section" class="section hidden">
+        <!-- 内容はそのまま -->
+      </div>
+      
+      <div id="export-section" class="section hidden">
+        <!-- 内容はそのまま -->
+      </div>
+      
+      <div id="maintenance-section" class="section hidden">
+        <!-- 内容はそのまま -->
+      </div>
+    </div>
+
+    <script>
+      // グローバル変数
+      const CLIENT_VERSION = '1.6.1'; // クライアント側のバージョン
+      let currentTab = 'auto';  // 初期タブを自動処理に変更
+      let serverVersion = '';
+      let fileContent = null;
+      window.autoFileContent = null; // 自動処理用のファイルコンテンツをグローバルに設定
+      
+      /**
+       * シート初期化関数 - シンプル版
+       */
+      function initializeAllSheetsSimple() {
+        console.log('シート初期化を実行します');
+        
+        // 確認ダイアログを表示
+        if (!confirm('シートを初期化します。この操作は元に戻せません。続行しますか？')) {
+          console.log('ユーザーがキャンセルしました');
+          return;
+        }
+        
+        // 初期化ボタンを無効化
+        const initButton = document.querySelector('.maintenance-section .action-btn-secondary');
+        if (initButton) {
+          initButton.disabled = true;
+        }
+        
+        // 統一メッセージを表示
+        showUnifiedMessage('シート初期化を実行中です...', 'info');
+        
+        // サーバーサイド処理を実行
+        google.script.run
+          .withSuccessHandler(function(result) {
+            console.log('初期化結果:', result);
+            
+            // ボタンを再有効化
+            if (initButton) initButton.disabled = false;
+            
+            if (result.success) {
+              // 成功メッセージを表示
+              showUnifiedMessage('シート初期化が完了しました。ページを再読み込みします...', 'success');
+              
+              // 少し遅延をいれてからページを再読み込み
+              setTimeout(function() {
+                if (typeof google !== 'undefined' && google.script) {
+                  google.script.run.reloadSidebar();
+                } else {
+                  window.location.reload();
+                }
+              }, 1500);
+            } else {
+              // エラーメッセージを表示
+              showUnifiedMessage('初期化エラー: ' + result.message, 'error');
+            }
+          })
+          .withFailureHandler(function(error) {
+            console.error('初期化エラー:', error);
+            
+            // ボタンを再有効化
+            if (initButton) initButton.disabled = false;
+            
+            // エラーメッセージを表示
+            showUnifiedMessage('初期化エラー: ' + error, 'error');
+          })
+          .initializeAllSheets();
+      }
+      
+      // タブ切り替え関数
+      function showTab(tabId) {
+        console.log('タブ切り替え:', tabId);
+        currentTab = tabId;
+        
+        // すべてのタブコンテンツを非表示
+        document.querySelectorAll('.tab-content').forEach(function(content) {
+          content.style.display = 'none';
+        });
+        
+        // すべてのタブボタンから active クラスを削除
+        document.querySelectorAll('.tab-btn').forEach(function(btn) {
+          btn.classList.remove('active');
+        });
+        
+        // 選択されたタブを表示し、ボタンをアクティブに
+        const selectedTab = document.getElementById(tabId + '-tab');
+        if (selectedTab) {
+          selectedTab.style.display = 'block';
+        } else {
+          console.error('タブが見つかりません:', tabId + '-tab');
+          // デフォルトでautoタブを表示
+          document.getElementById('auto-tab').style.display = 'block';
+          currentTab = 'auto';
+        }
+        
+        // ボタンをアクティブに
+        const activeBtn = document.querySelector(`#${tabId}-tab-btn`);
+        if (activeBtn) {
+          activeBtn.classList.add('active');
+        } else {
+          // デフォルトでautoタブボタンをアクティブに
+          const autoBtn = document.querySelector('#auto-tab-btn');
+          if (autoBtn) autoBtn.classList.add('active');
+        }
+      }
+      
+      // ページ読み込み完了時の処理
+      document.addEventListener('DOMContentLoaded', function() {
+        console.log('DOM読み込み完了');
+        
+        // サーバーからのバージョン取得
+        getServerVersion();
+        
+        // 各種ハンドラを設定
+        console.log('各種ハンドラの設定を開始します');
+        try {
+          setupTabHandlers();
+          console.log('タブハンドラの設定が完了しました');
+          
+          setupFileUploadHandlers();
+          console.log('ファイルアップロードハンドラの設定が完了しました');
+          
+          setupButtonHandlers();
+          console.log('ボタンハンドラの設定が完了しました');
+          
+          setupAutoProcessHandlers(); // 自動処理ハンドラの設定
+          console.log('自動処理ハンドラの設定が完了しました');
+        } catch (e) {
+          console.error('ハンドラ設定中にエラーが発生しました:', e);
+        }
+        
+        // ダウンロード完了メッセージのイベントリスナーを追加
+        window.addEventListener('message', function(event) {
+          console.log('メッセージ受信:', event.data);
+          if (event.data && event.data.type === 'download-complete') {
+            // ダウンロード完了メッセージを統一メッセージエリアに表示
+            showUnifiedMessage(`「${event.data.fileName}」のダウンロードが完了しました`, 'success');
+          }
+        });
+        
+        // 初期タブを表示（自動処理タブをデフォルトに）
+        showTab('auto');
+      });
+      
+      /**
+       * 統一されたメッセージ表示関数
+       * @param {string} message - 表示するメッセージ
+       * @param {string} type - メッセージタイプ（success, error, info, warning）
+       */
+      function showUnifiedMessage(message, type = 'info') {
+        console.log(`統一メッセージ [${type}]: ${message}`);
+        try {
+          // メッセージ要素
+          const messageElement = document.getElementById('unified-message');
+          if (!messageElement) {
+            console.error('unified-message要素が見つかりません');
+            return;
+          }
+          
+          // メッセージタイプに応じたスタイルを設定
+          messageElement.className = `message ${type}`;
+          messageElement.textContent = message;
+          messageElement.style.display = 'block';
+          
+          // 一番上までスクロール
+          window.scrollTo(0, 0);
+        } catch (e) {
+          console.error('showUnifiedMessage関数の実行中にエラーが発生しました:', e);
+        }
+      }
+      
+      /**
+       * 自動処理タブにメッセージを表示する関数
+       * @param {string} message - 表示するメッセージ
+       * @param {string} type - メッセージタイプ（success, error, info, warning）
+       */
+      function showAutoMessage(message, type = 'info') {
+        console.log(`自動処理メッセージ [${type}]: ${message}`);
+        // 統一メッセージ表示関数を使用
+        showUnifiedMessage(message, type);
+      }
+      
+      // サーバーバージョンを取得する関数
+      function getServerVersion() {
+        console.log('サーバーバージョンを取得します');
+        document.getElementById('version-display').textContent = 'バージョン: ' + CLIENT_VERSION;
+        
+        // サーバーサイドの処理を呼び出す
+          google.script.run
+            .withSuccessHandler(function(version) {
+            console.log('サーバーバージョン取得成功:', version);
+            serverVersion = version;
+            updateVersionDisplay();
+          })
+          .withFailureHandler(function(error) {
+            console.error('サーバーバージョン取得エラー:', error);
+            serverVersion = 'エラー';
+            updateVersionDisplay();
+          })
+          .getVersion();
+      }
+      
+      // バージョン表示を更新する関数
+      function updateVersionDisplay() {
+        const versionDisplay = document.getElementById('version-display');
+        const versionIndicator = document.getElementById('version-indicator');
+        
+        if (!versionDisplay || !versionIndicator) {
+          console.error('バージョン表示要素が見つかりません');
+          return;
+        }
+        
+        versionDisplay.textContent = `バージョン: ${CLIENT_VERSION}`;
+        versionIndicator.style.display = 'inline-flex';
+        
+        if (serverVersion === 'エラー') {
+          versionIndicator.textContent = 'error';
+          versionIndicator.className = 'version-mismatch material-icons';
+          versionIndicator.title = 'サーバーバージョンの取得に失敗しました';
+        } else if (CLIENT_VERSION === serverVersion) {
+          versionIndicator.textContent = 'check_circle';
+          versionIndicator.className = 'version-match material-icons';
+          versionIndicator.title = 'クライアントとサーバーのバージョンが一致しています';
+        } else {
+          versionIndicator.textContent = 'warning';
+          versionIndicator.className = 'version-mismatch material-icons';
+          versionIndicator.title = `バージョン不一致: クライアント=${CLIENT_VERSION}, サーバー=${serverVersion}`;
+        }
+      }
+      
+      /**
+       * 初期化処理
+       */
+      function initialize() {
+        // バージョン情報の取得と表示
+        google.script.run
+          .withSuccessHandler(function(version) {
+            serverVersion = version;
+            updateVersionDisplay();
+            })
+            .withFailureHandler(function(error) {
+              console.error('バージョン取得エラー:', error);
+            document.getElementById('version-text').textContent = 'バージョン: ' + CLIENT_VERSION + ' (サーバー接続エラー)';
+            document.getElementById('version-status').innerHTML = '<i class="material-icons version-mismatch">error</i>';
+            })
+            .getVersion();
+            
+        // 各タブのイベントリスナー設定
+        document.querySelectorAll('.tab-btn').forEach(function(tab) {
+          tab.addEventListener('click', function() {
+            switchTab(this.dataset.tab);
+          });
+        });
+        
+        // ファイルドロップエリアの設定
+        setupFileDropArea();
+        
+        // ファイル選択ボタンの設定
+        const fileSelectBtn = document.getElementById('file-select-btn');
+        if (fileSelectBtn) {
+          fileSelectBtn.addEventListener('click', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            console.log('ファイル選択ボタンがクリックされました');
+            const fileUpload = document.getElementById('file-upload');
+            if (fileUpload) {
+              fileUpload.click();
+        } else {
+              console.error('file-uploadエレメントが見つかりません');
+            }
+          });
+        } else {
+          console.error('file-select-btnエレメントが見つかりません');
+        }
+        
+        // ファイル選択イベントの設定
+        const fileUpload = document.getElementById('file-upload');
+        if (fileUpload) {
+          fileUpload.addEventListener('change', function(e) {
+            console.log('ファイル選択イベントが発生しました');
+            handleFileSelect(e);
+          });
+        } else {
+          console.error('file-uploadエレメントが見つかりません');
+        }
+        
+        // 自動処理ボタンの設定
+        const autoProcessBtn = document.getElementById('auto-process-btn');
+        if (autoProcessBtn) {
+          autoProcessBtn.addEventListener('click', startAutoProcess);
+        }
+        
+        // 初期タブを表示
+        switchTab(currentTab);
+      }
+      
+      /**
+       * タブ切り替え
+       */
+      function switchTab(tabId) {
+        console.log('タブ切り替え:', tabId);
+        currentTab = tabId;
+        
+        // すべてのタブコンテンツを非表示
+        document.querySelectorAll('.tab-content').forEach(function(content) {
+          content.style.display = 'none';
+        });
+        
+        // すべてのタブボタンから active クラスを削除
+        document.querySelectorAll('.tab-btn').forEach(function(btn) {
+          btn.classList.remove('active');
+        });
+        
+        // 選択されたタブを表示し、ボタンをアクティブに
+        document.getElementById(tabId + '-tab').style.display = 'block';
+        document.querySelector('.tab-btn[data-tab="' + tabId + '"]').classList.add('active');
+      }
+      
+      /**
+       * バージョン表示を更新
+       */
+      function updateVersionDisplay() {
+        const versionText = document.getElementById('version-text');
+        const versionStatus = document.getElementById('version-status');
+        
+        if (versionText && versionStatus) {
+          versionText.textContent = 'バージョン: ' + CLIENT_VERSION + ' (サーバー: ' + serverVersion + ')';
+          
+          if (CLIENT_VERSION === serverVersion) {
+            versionStatus.innerHTML = '<i class="material-icons version-match">check_circle</i>';
+          } else {
+            versionStatus.innerHTML = '<i class="material-icons version-mismatch">warning</i>';
+          }
+        } else {
+          console.error('バージョン表示要素が見つかりません');
+        }
+      }
+      
+      /**
+       * ファイルドロップエリアの設定
+       */
+      function setupFileDropArea() {
+        const dropArea = document.getElementById('file-drop-area');
+        if (!dropArea) {
+          console.error('file-drop-areaエレメントが見つかりません');
+          return;
+        }
+        
+        console.log('ファイルドロップエリアを設定します');
+        
+        // ドラッグオーバーイベント
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+          dropArea.addEventListener(eventName, preventDefaults, false);
+        });
+        
+        function preventDefaults(e) {
+          e.preventDefault();
+          e.stopPropagation();
+        }
+        
+        // ハイライト処理
+        ['dragenter', 'dragover'].forEach(eventName => {
+          dropArea.addEventListener(eventName, highlight, false);
+        });
+        
+        ['dragleave', 'drop'].forEach(eventName => {
+          dropArea.addEventListener(eventName, unhighlight, false);
+        });
+        
+        function highlight() {
+          dropArea.classList.add('highlight');
+        }
+        
+        function unhighlight() {
+          dropArea.classList.remove('highlight');
+        }
+        
+        // ドロップ処理
+        dropArea.addEventListener('drop', handleDrop, false);
+      }
+      
+      /**
+       * ドロップイベントハンドラ
+       */
+      function handleDrop(e) {
+        const dt = e.dataTransfer;
+        const files = dt.files;
+        
+        if (files.length) {
+          handleFiles(files);
+        }
+      }
+      
+      /**
+       * ファイル選択イベントハンドラ
+       */
+      function handleFileSelect(e) {
+        const files = e.target.files;
+        if (files.length) {
+          handleFiles(files);
+        }
+      }
+      
+      /**
+       * ファイル処理
+       */
+      function handleFiles(files) {
+        const file = files[0];
+        
+        if (file.type !== 'text/csv' && !file.name.endsWith('.csv')) {
+          showMessage('CSVファイルのみアップロード可能です', 'error');
+          return;
+        }
+        
+        if (file.size > 10 * 1024 * 1024) { // 10MB制限
+          showMessage('ファイルサイズは10MB以下にしてください', 'error');
+          return;
+        }
+        
+        updateFileInfo(file);
+        
+        const reader = new FileReader();
+        reader.onload = function(e) {
+          fileContent = e.target.result;
+          showMessage('CSVファイルを読み込みました', 'success');
+          document.getElementById('auto-process-btn').disabled = false;
+        };
+        reader.onerror = function() {
+          showMessage('ファイル読み込みエラー', 'error');
+        };
+        reader.readAsText(file);
+      }
+      
+      /**
+       * ファイル情報の更新表示
+       */
+      function updateFileInfo(file) {
+        const filePreview = document.getElementById('file-preview');
+        const fileInfo = document.createElement('div');
+        fileInfo.className = 'file-info';
+        
+        const fileName = file.name;
+        const fileSize = (file.size / 1024).toFixed(1) + ' KB';
+        
+        fileInfo.innerHTML = `
+          <div class="file-icon"><i class="material-icons">description</i></div>
+          <div class="file-details">
+            <div class="file-name">${fileName}</div>
+            <div class="file-size">${fileSize}</div>
+          </div>
+        `;
+        
+        filePreview.innerHTML = '';
+        filePreview.appendChild(fileInfo);
+        filePreview.style.display = 'block';
+      }
+      
+      /**
+       * アコーディオン開閉の切り替え
+       */
+      function toggleAccordion(element) {
+        // アクティブクラスの切り替え
+        element.classList.toggle('active');
+        
+        // コンテンツ要素を取得
+        const content = element.nextElementSibling;
+        
+        // コンテンツの表示/非表示を切り替え
+        if (element.classList.contains('active')) {
+          content.style.maxHeight = content.scrollHeight + 'px';
+        } else {
+          content.style.maxHeight = '0';
+        }
+      }
+      
+      /**
+       * 自動処理開始
+       */
+      function startAutoProcess() {
+        console.log('自動処理開始関数が呼び出されました');
+        if (!window.autoFileContent) {
+          showUnifiedMessage('CSVファイルを選択してください', 'error');
+          return;
+        }
+        
+        // 処理中表示
+        const processBtn = document.getElementById('auto-process-btn');
+        const cancelBtn = document.getElementById('auto-cancel-btn');
+        const progressStatus = document.getElementById('auto-progress-status');
+        const progressMessage = document.getElementById('auto-progress-message');
+        const resultMessage = document.getElementById('auto-result-message');
+        
+        // 結果メッセージを非表示
+        if (resultMessage) resultMessage.style.display = 'none';
+        
+        // メッセージをクリア
+        showUnifiedMessage('処理を開始します...', 'info');
+        
+        // UI更新
+        if (processBtn) processBtn.disabled = true;
+        if (cancelBtn) cancelBtn.style.display = 'block'; // キャンセルボタン表示
+        if (progressStatus) {
+          progressStatus.style.display = 'flex';
+          progressMessage.textContent = 'CSVデータを解析中...';
+        }
+        
+        // 処理をキャンセル可能として記録
+        window.isProcessing = true;
+        
+        console.log('サーバーサイド処理を呼び出します');
+        
+        // 処理進捗更新関数
+        function updateProgress(step, progress) {
+          if (progressMessage && progressStatus) {
+            progressStatus.style.display = 'flex';
+            progressMessage.textContent = progress;
+            console.log(`進捗更新: ${step} - ${progress}`);
+          }
+        }
+        
+        // サーバーサイド処理を呼び出し
+        window.currentProcessRequest = google.script.run
+          .withSuccessHandler(function(result) {
+            console.log('自動処理結果を受信:', result);
+            
+            // 処理フラグをリセット
+            window.isProcessing = false;
+            
+            // UI状態を更新
+            if (processBtn) processBtn.disabled = false;
+            if (cancelBtn) cancelBtn.style.display = 'none'; // キャンセルボタン非表示
+            if (progressStatus) {
+              progressStatus.style.display = 'none';
+            }
+            
+            if (result.success) {
+              // 処理成功
+              if (progressStatus) {
+                progressStatus.style.display = 'none';
+              }
+              
+              // 統一メッセージエリアに結果を表示
+              showUnifiedMessage(result.finalMessage, 'success');
+              
+              // 明確な結果メッセージを表示（目立つように）
+              if (resultMessage) {
+                resultMessage.innerHTML = `
+                  <div class="completion-icon">✓</div>
+                  <div class="completion-message">
+                    <h3>処理が完了しました</h3>
+                    <p>${result.stats.importedRows || 0}件のデータから${result.stats.duplicateGroups || 0}件の重複グループを検出</p>
+                    <p>${result.stats.exportCount || 0}件のアイテムをエクスポート（処理時間: ${result.processingTime.toFixed(1)}秒）</p>
+                  </div>
+                `;
+                resultMessage.style.display = 'flex';
+              }
+              
+              // CSVダウンロード処理（エクスポートデータがある場合）
+              if (result.data && result.fileName) {
+                // 少し遅延を入れてからダウンロード処理を開始（UIの更新を先に完了させるため）
+                setTimeout(function() {
+                  console.log('エクスポートデータが存在するため、自動的にダウンロードを開始します');
+                  downloadAutoProcessedCSV(result.data, result.fileName, true);
+                }, 500);
+              }
+            } else {
+              // エラー
+              if (progressStatus) {
+                progressStatus.style.display = 'none';
+              }
+              
+              // エラーメッセージを表示
+              showUnifiedMessage(result.finalMessage || result.error?.message || '不明なエラーが発生しました', 'error');
+              
+              // エラーメッセージを結果エリアに表示
+              if (resultMessage) {
+                resultMessage.innerHTML = `
+                  <div class="error-icon">⚠</div>
+                  <div class="error-message">
+                    <h3>処理中にエラーが発生しました</h3>
+                    <p>${result.finalMessage || result.error?.message || '不明なエラーが発生しました'}</p>
+                    <p>別のCSVファイルを選択するか、シートを初期化してから再試行してください。</p>
+                  </div>
+                `;
+                resultMessage.className = 'result-message error';
+                resultMessage.style.display = 'flex';
+              }
+            }
+          })
+          .withFailureHandler(function(error) {
+            console.error('自動処理エラー:', error);
+            
+            // 処理フラグをリセット
+            window.isProcessing = false;
+            
+            // UI状態を更新
+            if (processBtn) processBtn.disabled = false;
+            if (cancelBtn) cancelBtn.style.display = 'none'; // キャンセルボタン非表示
+            if (progressStatus) {
+              progressStatus.style.display = 'none';
+            }
+            
+            // エラーメッセージを表示
+            showUnifiedMessage('処理中にエラーが発生しました: ' + error.message, 'error');
+            
+            // エラーメッセージを結果エリアに表示
+            if (resultMessage) {
+              resultMessage.innerHTML = `
+                <div class="error-icon">⚠</div>
+                <div class="error-message">
+                  <h3>処理中にエラーが発生しました</h3>
+                  <p>${error.message || '不明なエラーが発生しました'}</p>
+                  <p>別のCSVファイルを選択するか、シートを初期化してから再試行してください。</p>
+                </div>
+              `;
+              resultMessage.className = 'result-message error';
+              resultMessage.style.display = 'flex';
+            }
+          })
+          .withUserObject({
+            updateProgress: function(step, progress) {
+              // クライアント側でサーバーからの進捗更新を受け取るコールバック
+              if (progressStatus && progressMessage) {
+                progressStatus.style.display = 'flex';
+                progressMessage.textContent = progress;
+              }
+            }
+          })
+          .autoProcessEbayData(window.autoFileContent);
+          
+        // 段階的に進捗状況を更新
+        setTimeout(function() {
+          updateProgress('import', 'CSVデータを解析中...');
+        }, 500);
+        
+        setTimeout(function() {
+          if (window.isProcessing) updateProgress('import', 'データをインポート中...');
+        }, 2000);
+        
+        setTimeout(function() {
+          if (window.isProcessing) updateProgress('detect', '重複データを検索中...');
+        }, 5000);
+        
+        setTimeout(function() {
+          if (window.isProcessing) updateProgress('analyze', '重複パターンを分析中...');
+        }, 10000);
+        
+        setTimeout(function() {
+          if (window.isProcessing) updateProgress('export', 'CSVエクスポートを準備中...');
+        }, 15000);
+      }
+      
+      /**
+       * 自動処理のキャンセル
+       */
+      function cancelAutoProcess() {
+        console.log('自動処理のキャンセルが要求されました');
+        
+        if (!window.isProcessing) {
+          console.log('処理中ではないため、キャンセルは不要です');
+          return;
+        }
+        
+        try {
+          // 処理のキャンセル
+          if (window.currentProcessRequest && typeof window.currentProcessRequest.cancel === 'function') {
+            window.currentProcessRequest.cancel();
+            console.log('現在の処理をキャンセルしました');
+          }
+          
+          // UI状態の更新
+          const processBtn = document.getElementById('auto-process-btn');
+          const cancelBtn = document.getElementById('auto-cancel-btn');
+          const progressStatus = document.getElementById('auto-progress-status');
+          
+          if (processBtn) processBtn.disabled = false;
+          if (cancelBtn) cancelBtn.style.display = 'none';
+          if (progressStatus) progressStatus.style.display = 'none';
+          
+          // 処理フラグをリセット
+          window.isProcessing = false;
+          
+          // メッセージ表示
+          showUnifiedMessage('処理がキャンセルされました', 'info');
+          
+        } catch (e) {
+          console.error('キャンセル処理中にエラーが発生しました:', e);
+          showUnifiedMessage('キャンセル中にエラーが発生しました: ' + e.message, 'error');
+        }
+      }
+      
+      // アプリの状態を確認する関数
+      function checkAppState() {
+        console.log('checkAppState: アプリの状態確認を開始');
+        try {
+          if (typeof google === 'undefined' || !google.script) {
+            console.error('checkAppState: Google Script APIが利用できません');
+            return;
+          }
+          
+          google.script.run
+            .withSuccessHandler(function(state) {
+              console.log('checkAppState: 状態取得成功', state);
+              updateUIState(state);
+            })
+            .withFailureHandler(function(error) {
+              console.error('checkAppState: 状態取得エラー', error);
+              handleError(error);
+            })
+            .checkAppState();
+        } catch (e) {
+          console.error('checkAppState: 例外発生', e);
+        }
+      }
+      
+      // UI状態を更新する関数
+      function updateUIState(state) {
+        // ステップの状態を更新
+        const step1 = document.getElementById('step1');
+        const step2 = document.getElementById('step2');
+        const step3 = document.getElementById('step3');
+        
+        // インポートシートの有無でインポートボタンの状態を更新
+        const importBtn = document.getElementById('import-btn');
+        const detectBtn = document.getElementById('detect-btn');
+        const exportBtn = document.getElementById('export-btn');
+        const downloadBtn = document.getElementById('download-btn');
+        const analysisBtn = document.getElementById('analysis-btn');
+        
+        // すべて初期状態に戻す
+        step1.className = 'step';
+        step2.className = 'step';
+        step3.className = 'step';
+        
+        // インポートデータが存在する場合
+        if (state.hasImportSheet) {
+          step1.className = 'step complete';
+          step2.className = 'step active';
+          detectBtn.disabled = false;
+          
+          if (state.stats && state.stats.rowCount) {
+            showMessage('import-message', `${state.stats.rowCount}件のデータがインポートされています。`, 'success');
+          }
+        } else {
+          step1.className = 'step active';
+          detectBtn.disabled = true;
+        }
+        
+        // 重複リストが存在する場合
+        if (state.hasDuplicateSheet) {
+          step2.className = 'step complete';
+          step3.className = 'step active';
+          exportBtn.disabled = false;
+          analysisBtn.disabled = false;
+          
+          if (state.stats && state.stats.duplicateGroups) {
+            showMessage('detect-message', `${state.stats.duplicateGroups}件の重複グループ（合計${state.stats.duplicateItems}件）が検出されています。`, 'success');
+          }
+        } else {
+          exportBtn.disabled = true;
+          analysisBtn.disabled = true;
+        }
+        
+        // エクスポートシートが存在する場合
+        if (state.hasExportSheet) {
+          downloadBtn.disabled = false;
+          
+          if (state.stats && state.stats.exportCount) {
+            showMessage('export-message', `${state.stats.exportCount}件のアイテムが出力対象として設定されています。`, 'success');
+          }
+        } else {
+          downloadBtn.disabled = true;
+        }
+      }
+      
+      // イベントリスナーのセットアップ
+      function setupEventListeners() {
+        console.log('イベントリスナーのセットアップを開始します');
+        
+        // ファイル選択ボタン
+        const selectFileBtn = document.getElementById('select-file-btn');
+        const fileInput = document.getElementById('csv-file');
+        
+        console.log('ファイル選択ボタン要素:', selectFileBtn);
+        console.log('ファイル入力要素:', fileInput);
+        
+        // イベントリスナーをクリアして再設定（重複登録を防止）
+        if (selectFileBtn) {
+          // イベントリスナーをクリア（可能であれば）
+          selectFileBtn.removeEventListener('click', handleSelectFileClick);
+          // 新しいイベントリスナーを設定
+          selectFileBtn.addEventListener('click', handleSelectFileClick);
+          console.log('selectFileBtn にイベントリスナーを設定しました');
+        } else {
+          console.error('select-file-btn 要素が見つかりません');
+        }
+        
+        // ファイル選択の変更イベント
+        if (fileInput) {
+          // イベントリスナーをクリア（可能であれば）
+          fileInput.removeEventListener('change', handleFileSelect);
+          // 新しいイベントリスナーを設定
+          fileInput.addEventListener('change', handleFileSelect);
+          console.log('fileInput にイベントリスナーを設定しました');
+        } else {
+          console.error('csv-file 要素が見つかりません');
+        }
+        
+        // インポートボタン
+        const importBtn = document.getElementById('import-btn');
+        if (importBtn) {
+          importBtn.removeEventListener('click', importCsvFile);
+          importBtn.addEventListener('click', importCsvFile);
+          console.log('importBtn にイベントリスナーを設定しました');
+        }
+        
+        // 重複検出ボタン
+        const detectBtn = document.getElementById('detect-btn');
+        if (detectBtn) {
+          detectBtn.removeEventListener('click', detectDuplicates);
+          detectBtn.addEventListener('click', detectDuplicates);
+          console.log('detectBtn にイベントリスナーを設定しました');
+        }
+        
+        // CSVエクスポートボタン
+        const exportBtn = document.getElementById('export-btn');
+        if (exportBtn) {
+          exportBtn.removeEventListener('click', generateExportCsv);
+          exportBtn.addEventListener('click', generateExportCsv);
+          console.log('exportBtn にイベントリスナーを設定しました');
+        }
+        
+        // CSVダウンロードボタン
+        const downloadBtn = document.getElementById('download-btn');
+        if (downloadBtn) {
+          downloadBtn.removeEventListener('click', downloadExportCsv);
+          downloadBtn.addEventListener('click', downloadExportCsv);
+          console.log('downloadBtn にイベントリスナーを設定しました');
+        }
+        
+        // 分析ボタン
+        const analysisBtn = document.getElementById('analysis-btn');
+        if (analysisBtn) {
+          analysisBtn.removeEventListener('click', analyzeData);
+          analysisBtn.addEventListener('click', analyzeData);
+          console.log('analysisBtn にイベントリスナーを設定しました');
+        }
+        
+        // 初期化ボタン
+        const resetAllBtn = document.getElementById('reset-all-btn');
+        if (resetAllBtn) {
+          resetAllBtn.removeEventListener('click', resetAllSheets);
+          resetAllBtn.addEventListener('click', resetAllSheets);
+          console.log('resetAllBtn にイベントリスナーを設定しました');
+        }
+      }
+      
+      // ファイル選択ボタンのクリックハンドラー（別関数として定義）
+      function handleSelectFileClick(e) {
+        console.log('ファイル選択ボタンがクリックされました');
+        e.preventDefault();
+        const fileInput = document.getElementById('csv-file');
+        if (fileInput) {
+          console.log('ファイル選択ダイアログを開きます');
+          fileInput.click();
+        } else {
+          console.error('csv-file 要素が見つかりません（クリック時）');
+        }
+      }
+      
+      // ファイル選択のインラインハンドラー（HTML要素から直接呼び出し用）
+      function handleFileSelectInline(input) {
+        console.log('インラインハンドラーが呼び出されました', input);
+        if (input && input.files && input.files.length > 0) {
+          const file = input.files[0];
+          console.log('選択されたファイル:', file.name);
+          
+          // ファイル情報を表示
+          const fileInfo = document.getElementById('file-info');
+          if (fileInfo) {
+            fileInfo.style.display = 'block';
+            fileInfo.innerHTML = `
+              <div><strong>ファイル名:</strong> ${file.name}</div>
+              <div><strong>サイズ:</strong> ${formatFileSize(file.size)}</div>
+              <div><strong>タイプ:</strong> ${file.type || 'text/csv'}</div>
+            `;
+            console.log('ファイル情報を表示しました');
+          } else {
+            console.error('file-info要素が見つかりません');
+          }
+          
+          // インポートボタンを有効化
+          const importBtn = document.getElementById('import-btn');
+          if (importBtn) {
+            importBtn.disabled = false;
+            console.log('インポートボタンを有効化しました');
+          } else {
+            console.error('import-btn要素が見つかりません');
+          }
+        }
+      }
+      
+      // ファイル選択時の処理（イベントリスナー用）
+      function handleFileSelect(event) {
+        console.log('handleFileSelect関数が呼び出されました', event);
+        
+        const file = event.target.files[0];
+        console.log('選択されたファイル:', file);
+        
+        if (!file) {
+          console.warn('ファイルが選択されていません');
+          return;
+        }
+        
+        // インラインハンドラーを呼び出して処理を共通化
+        handleFileSelectInline(event.target);
+      }
+      
+      // ファイルサイズを読みやすい形式にフォーマット
+      function formatFileSize(bytes) {
+        if (bytes < 1024) return bytes + ' bytes';
+        else if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+        else return (bytes / 1048576).toFixed(1) + ' MB';
+      }
+      
+      // CSVファイルインポート処理のエラーメッセージを表示する関数
+      function displayImportErrorInfo(result) {
+        // メッセージを表示
+        showMessage('import-message', result.message, 'error');
+        
+        // フォーマットエラーの場合、詳細情報を表示
+        if (result.isFormatError) {
+          let errorDetailsHtml = '<div class="alert alert-info mt-3">';
+          errorDetailsHtml += '<strong>推奨形式:</strong> eBay Seller Hubからダウンロードした出品リストCSV<br>';
+          errorDetailsHtml += '<strong>必須ヘッダー:</strong> Item number, Title, Start date<br><br>';
+          
+          if (result.detectedHeaders && result.detectedHeaders.length > 0) {
+            errorDetailsHtml += '<strong>検出されたヘッダー:</strong><br>';
+            errorDetailsHtml += '<div class="code-block">' + result.detectedHeaders.slice(0, 5).join(', ') + (result.detectedHeaders.length > 5 ? '...' : '') + '</div>';
+          }
+          
+          if (result.expectedHeaders && result.expectedHeaders.length > 0) {
+            errorDetailsHtml += '<strong>期待されるヘッダー(例):</strong><br>';
+            errorDetailsHtml += '<div class="code-block">' + result.expectedHeaders.slice(0, 5).join(', ') + '...</div>';
+          }
+          
+          errorDetailsHtml += '<p class="mt-2"><strong>インポート方法:</strong><br>';
+          errorDetailsHtml += '1. eBay Seller Hubにログイン<br>';
+          errorDetailsHtml += '2. 出品管理 > すべての出品リスト<br>';
+          errorDetailsHtml += '3. 「ダウンロード」ボタンをクリック<br>';
+          errorDetailsHtml += '4. ダウンロードしたCSVファイルをインポート</p>';
+          errorDetailsHtml += '</div>';
+          
+          document.getElementById('import-error-details').innerHTML = errorDetailsHtml;
+          document.getElementById('import-error-details').style.display = 'block';
+        } else {
+          document.getElementById('import-error-details').style.display = 'none';
+        }
+      }
+      
+      // CSVファイルをインポートする関数
+      function importCsvFile() {
+        console.log('importCsvFile関数が呼び出されました');
+        
+        try {
+          // ファイル選択のUI要素を取得
+          const fileInput = document.getElementById('csv-file');
+          if (!fileInput) {
+            console.error('csv-file要素が見つかりません');
+            showMessage('import-message', 'ファイル入力要素が見つかりません。', 'error');
+            return;
+          }
+          
+          // ファイルが選択されているか確認
+          const file = fileInput.files[0];
+          console.log('インポート対象ファイル:', file ? {
+            name: file.name,
+            size: file.size,
+            type: file.type
+          } : 'ファイルが選択されていません');
+          
+          if (!file) {
+            console.warn('ファイルが選択されていません');
+            showMessage('import-message', '先にCSVファイルを選択してください。', 'error');
+            return;
+          }
+          
+          // ファイルタイプチェック - より寛容に
+          console.log('ファイルタイプ:', file.type);
+          if (file.type && !file.type.includes('csv') && !file.type.includes('text/plain') && !file.name.toLowerCase().endsWith('.csv')) {
+            console.warn('CSVファイル形式ではありません:', file.type, file.name);
+            showMessage('import-message', 'CSVファイル形式ではないかもしれません。正しいCSVファイルを選択してください。', 'warning');
+            // 警告だけで処理は続行
+          }
+          
+          // インポート実行ボタンを無効化
+          const importBtn = document.getElementById('import-btn');
+          if (importBtn) {
+            importBtn.disabled = true;
+            importBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> インポート中...';
+          }
+          
+          showMessage('import-message', 'ファイルを読み込んでいます...', 'info');
+          
+          // プログレスバーの表示
+          const progressContainer = document.getElementById('upload-progress');
+          const progressBar = document.getElementById('upload-progress-bar');
+          if (progressContainer && progressBar) {
+            progressContainer.style.display = 'block';
+            progressBar.style.width = '10%';
+          }
+          
+          // 改良したFileReader処理
+          try {
+            const reader = new FileReader();
+            
+            reader.onload = function(event) {
+              try {
+                if (!event || !event.target) {
+                  throw new Error('読み込みイベントが無効です');
+                }
+                
+                const result = event.target.result;
+                if (result === null || result === undefined) {
+                  throw new Error('ファイル読み込み結果が無効です');
+                }
+                
+                const csvContent = String(result); // 明示的に文字列に変換
+                console.log('CSVファイル読み込み成功 - サイズ:', csvContent.length, 'バイト');
+                console.log('CSVファイル内容サンプル:', csvContent.substring(0, 100) + '...');
+                
+                // プログレスバー更新
+                if (progressBar) progressBar.style.width = '30%';
+                
+                // ファイルサイズチェック
+                const MAX_SIZE = 10 * 1024 * 1024; // 10MB
+                if (csvContent.length > MAX_SIZE) {
+                  throw new Error(`CSVファイルが大きすぎます (${formatFileSize(csvContent.length)})。10MB以下のファイルを選択してください。`);
+                }
+                
+                // プログレスバー更新
+                if (progressBar) progressBar.style.width = '50%';
+                
+                // Google Script APIの存在確認
+                if (typeof google === 'undefined' || !google.script) {
+                  throw new Error('Google Script APIにアクセスできません。ページの再読み込みを試してください。');
+                }
+                
+                showMessage('import-message', 'サーバーにデータを送信しています...', 'info');
+                console.log('サーバーサイド関数を呼び出します: importCsvData');
+                
+                // プログレスバー更新
+                if (progressBar) progressBar.style.width = '70%';
+                
+                // CSVデータを送信
+                google.script.run
+                  .withSuccessHandler(function(result) {
+                    console.log('インポート完了:', result);
+                    
+                    // プログレスバーを完了に
+                    if (progressBar) progressBar.style.width = '100%';
+                    
+                    // インポートボタンを元に戻す
+                    if (importBtn) {
+                      importBtn.disabled = false;
+                      importBtn.innerHTML = 'インポート実行';
+                    }
+                    
+                    // 少し待ってからプログレスバーを非表示
+                    setTimeout(function() {
+                      if (progressContainer) {
+                        progressContainer.style.display = 'none';
+                        if (progressBar) progressBar.style.width = '0%';
+                      }
+                    }, 1000);
+                    
+                    if (result.success) {
+                      // インポート成功時
+                      showMessage('import-message', result.message, 'success');
+                      document.getElementById('import-error-details').style.display = 'none';
+                      
+                      // 入力欄リセット
+                      fileInput.value = '';
+                      document.getElementById('file-info').style.display = 'none';
+                      
+                      // アプリ状態更新
+                      checkAppState();
+                    } else {
+                      // エラー時
+                      console.error('インポートエラー:', result);
+                      displayImportErrorInfo(result);
+                    }
+                  })
+                  .withFailureHandler(function(error) {
+                    console.error('サーバー側でエラーが発生:', typeof error === 'object' ? JSON.stringify(error) : error);
+                    
+                    // プログレスバーを非表示
+                    if (progressContainer) {
+                      progressContainer.style.display = 'none';
+                    }
+                    
+                    // インポートボタンを元に戻す
+                    if (importBtn) {
+                      importBtn.disabled = false;
+                      importBtn.innerHTML = 'インポート実行';
+                    }
+                    
+                    // エラーメッセージの表示
+                    let errorMessage = 'インポート処理中にエラーが発生しました。';
+                    if (typeof error === 'string') {
+                      errorMessage = error;
+                    } else if (error && error.message) {
+                      errorMessage = error.message;
+                    }
+                    
+                    // ReferenceErrorが発生した場合の特別なメッセージ
+                    if (errorMessage.includes('ReferenceError') || errorMessage.includes('指定されたデータが見つかりません')) {
+                      errorMessage = 'CSVデータの処理中にエラーが発生しました。ファイル形式が正しいことを確認し、再度お試しください。';
+                    }
+                    
+                    showMessage('import-message', errorMessage, 'error');
+                  })
+                  .importCsvData(csvContent);
+                
+              } catch (processError) {
+                console.error('データ処理中にエラーが発生:', processError);
+                
+                // プログレスバーを非表示
+                if (progressContainer) {
+                  progressContainer.style.display = 'none';
+                }
+                
+                // インポートボタンを元に戻す
+                if (importBtn) {
+                  importBtn.disabled = false;
+                  importBtn.innerHTML = 'インポート実行';
+                }
+                
+                showMessage('import-message', 'データ処理中にエラーが発生しました: ' + (processError.message || processError), 'error');
+              }
+            };
+            
+            reader.onerror = function(errorEvent) {
+              console.error('ファイル読み込みエラー:', errorEvent);
+              
+              // プログレスバーを非表示
+              if (progressContainer) {
+                progressContainer.style.display = 'none';
+              }
+              
+              // インポートボタンを元に戻す
+              if (importBtn) {
+                importBtn.disabled = false;
+                importBtn.innerHTML = 'インポート実行';
+              }
+              
+              showMessage('import-message', 'ファイルの読み込みに失敗しました。', 'error');
+            };
+            
+            reader.onprogress = function(progressEvent) {
+              if (progressEvent.lengthComputable) {
+                const percentLoaded = Math.round((progressEvent.loaded / progressEvent.total) * 100);
+                console.log(`読み込み進捗: ${percentLoaded}%`);
+                
+                // プログレスバーを更新
+                if (progressBar && percentLoaded <= 30) {
+                  progressBar.style.width = percentLoaded + '%';
+                }
+              }
+            };
+            
+            // BOMを考慮したエンコーディング検出
+            // まずファイルの先頭バイトだけを読み取り、BOMの有無を確認
+            const bomReader = new FileReader();
+            bomReader.onload = function(e) {
+              const arr = new Uint8Array(e.target.result);
+              let encoding = 'UTF-8';
+              
+              // UTF-8 BOM検出
+              if (arr.length >= 3 && arr[0] === 0xEF && arr[1] === 0xBB && arr[2] === 0xBF) {
+                console.log('UTF-8 BOMを検出しました');
+                encoding = 'UTF-8';
+              }
+              // UTF-16LE BOM検出 
+              else if (arr.length >= 2 && arr[0] === 0xFF && arr[1] === 0xFE) {
+                console.log('UTF-16LE BOMを検出しました');
+                encoding = 'UTF-16LE';
+              }
+              // UTF-16BE BOM検出
+              else if (arr.length >= 2 && arr[0] === 0xFE && arr[1] === 0xFF) {
+                console.log('UTF-16BE BOMを検出しました');
+                encoding = 'UTF-16BE';
+              }
+              // Shift-JISなどの日本語エンコーディングの可能性がある場合
+              else if (file.name.match(/[ぁ-んァ-ン一-龥]/)) {
+                console.log('日本語ファイル名を検出、Shift-JISの可能性があります');
+                encoding = 'Shift-JIS';
+              }
+              
+              console.log(`ファイル読み込み開始 - エンコーディング: ${encoding}`);
+              reader.readAsText(file, encoding);
+            };
+            
+            bomReader.readAsArrayBuffer(file.slice(0, 4));
+            
+          } catch (fileError) {
+            console.error('FileReader使用中にエラーが発生:', fileError);
+            
+            // プログレスバーを非表示
+            if (progressContainer) {
+              progressContainer.style.display = 'none';
+            }
+            
+            // インポートボタンを元に戻す
+            if (importBtn) {
+              importBtn.disabled = false;
+              importBtn.innerHTML = 'インポート実行';
+            }
+            
+            showMessage('import-message', 'ファイルの読み込み中にエラーが発生しました: ' + (fileError.message || fileError), 'error');
+          }
+          
+        } catch (error) {
+          console.error('importCsvFile関数でエラーが発生:', error);
+          showMessage('import-message', 'インポート処理中に予期せぬエラーが発生しました: ' + (error.message || error), 'error');
+          
+          // インポートボタンを有効化
+          const importBtn = document.getElementById('import-btn');
+          if (importBtn) {
+            importBtn.disabled = false;
+            importBtn.innerHTML = 'インポート実行';
+          }
+          
+          // プログレスバーを非表示
+          const progressContainer = document.getElementById('upload-progress');
+          if (progressContainer) {
+            progressContainer.style.display = 'none';
+          }
+        }
+      }
+      
+      // 重複検出を実行する関数
+      function detectDuplicates() {
+        console.log('detectDuplicates関数が呼び出されました');
+        try {
+          const progressContainer = document.getElementById('detect-progress');
+          const progressBar = document.getElementById('detect-progress-bar');
+          const detectBtn = document.getElementById('detect-btn');
+          
+          // プログレスバーの表示
+          if (progressContainer && progressBar) {
+            progressContainer.style.display = 'block';
+            progressBar.style.width = '10%';
+            console.log('重複検出プログレスバーを表示しました');
+          }
+          
+          // 検出ボタンを無効化
+          if (detectBtn) {
+            detectBtn.disabled = true;
+            console.log('重複検出ボタンを無効化しました');
+          }
+          
+          showMessage('detect-message', '重複を検出しています...', 'info');
+          
+          // 徐々にプログレスバーを進める（実際の進捗とは無関係）
+          let progress = 10;
+          const progressInterval = setInterval(function() {
+            progress += 5;
+            if (progress <= 90 && progressBar) {
+              progressBar.style.width = progress + '%';
+              console.log('重複検出の進捗を表示:', progress + '%');
+            } else {
+              clearInterval(progressInterval);
+            }
+          }, 300);
+          
+          // Google Apps Script APIの確認
+          if (typeof google === 'undefined' || !google.script) {
+            console.error('detectDuplicates: Google Script APIが利用できません');
+            clearInterval(progressInterval);
+            if (progressContainer) progressContainer.style.display = 'none';
+            if (detectBtn) detectBtn.disabled = false;
+            showMessage('detect-message', 'APIにアクセスできません。', 'error');
+            return;
+          }
+          
+          // サーバーサイドの検出関数を呼び出す
+          console.log('detectDuplicates: サーバーサイド処理を開始します');
+          google.script.run
+            .withSuccessHandler(function(result) {
+              console.log('detectDuplicates: 処理完了', result);
+              clearInterval(progressInterval);
+              if (progressBar) progressBar.style.width = '100%';
+              
+              // 少し待ってからプログレスバーを非表示
+              setTimeout(function() {
+                if (progressContainer) {
+                  progressContainer.style.display = 'none';
+                  if (progressBar) progressBar.style.width = '0%';
+                }
+              }, 1000);
+              
+              if (result.success) {
+                console.log('重複検出成功:', result.message);
+                showMessage('detect-message', result.message, 'success');
+                
+                // アプリの状態を更新
+                checkAppState();
+              } else {
+                console.error('重複検出失敗:', result.message);
+                if (detectBtn) detectBtn.disabled = false;
+                showMessage('detect-message', result.message, 'error');
+              }
+            })
+            .withFailureHandler(function(error) {
+              console.error('detectDuplicates: エラー発生', error);
+              clearInterval(progressInterval);
+              if (progressContainer) progressContainer.style.display = 'none';
+              if (detectBtn) detectBtn.disabled = false;
+              showMessage('detect-message', `エラーが発生しました: ${error}`, 'error');
+            })
+            .detectDuplicates();
+        } catch (e) {
+          console.error('detectDuplicates関数の実行中にエラーが発生しました:', e);
+          showMessage('detect-message', `予期せぬエラー: ${e.message}`, 'error');
+        }
+      }
+      
+      // CSVを生成する関数
+      function generateExportCsv() {
+        console.log('generateExportCsv関数が呼び出されました');
+        try {
+          const exportBtn = document.getElementById('export-btn');
+          if (exportBtn) {
+            exportBtn.disabled = true;
+            console.log('エクスポートボタンを無効化しました');
+          }
+          
+          showMessage('export-message', 'CSVを生成しています...', 'info');
+          
+          // Google Apps Script APIの確認
+          if (typeof google === 'undefined' || !google.script) {
+            console.error('generateExportCsv: Google Script APIが利用できません');
+            if (exportBtn) exportBtn.disabled = false;
+            showMessage('export-message', 'APIにアクセスできません。', 'error');
+            return;
+          }
+          
+          console.log('generateExportCsv: サーバーサイド処理を開始します');
+          google.script.run
+            .withSuccessHandler(function(result) {
+              console.log('generateExportCsv: 処理完了', result);
+              if (exportBtn) exportBtn.disabled = false;
+              
+              if (result.success) {
+                console.log('CSV生成成功:', result.message);
+                showMessage('export-message', result.message, 'success');
+                
+                const downloadBtn = document.getElementById('download-btn');
+                if (downloadBtn) {
+                  downloadBtn.disabled = false;
+                  console.log('ダウンロードボタンを有効化しました');
+                }
+                
+                // アプリの状態を更新
+                checkAppState();
+              } else {
+                console.error('CSV生成失敗:', result.message);
+                showMessage('export-message', result.message, 'error');
+              }
+            })
+            .withFailureHandler(function(error) {
+              console.error('generateExportCsv: エラー発生', error);
+              if (exportBtn) exportBtn.disabled = false;
+              showMessage('export-message', `エラーが発生しました: ${error}`, 'error');
+            })
+            .generateExportCsv();
+        } catch (e) {
+          console.error('generateExportCsv関数の実行中にエラーが発生しました:', e);
+          showMessage('export-message', `予期せぬエラー: ${e.message}`, 'error');
+        }
+      }
+      
+      // CSVをダウンロードする関数
+      function downloadExportCsv() {
+        console.log('downloadExportCsv関数が呼び出されました');
+        try {
+          const downloadBtn = document.getElementById('download-btn');
+          if (downloadBtn) {
+            downloadBtn.disabled = true;
+            console.log('ダウンロードボタンを無効化しました');
+          }
+          
+          showMessage('export-message', 'ダウンロード準備中...', 'info');
+          
+          // Google Apps Script APIの確認
+          if (typeof google === 'undefined' || !google.script) {
+            console.error('downloadExportCsv: Google Script APIが利用できません');
+            if (downloadBtn) downloadBtn.disabled = false;
+            showMessage('export-message', 'APIにアクセスできません。', 'error');
+            return;
+          }
+          
+          console.log('downloadExportCsv: サーバーサイド処理を開始します');
+          google.script.run
+            .withSuccessHandler(function(result) {
+              console.log('downloadExportCsv: 処理完了', result);
+              if (downloadBtn) downloadBtn.disabled = false;
+              
+              if (result.success) {
+                console.log('ダウンロード処理成功:', result.message);
+                showMessage('export-message', result.message, 'success');
+                
+                // ダウンロード完了後もボタンを有効に戻す
+                setTimeout(function() {
+                  if (downloadBtn) downloadBtn.disabled = false;
+                  // 完了メッセージを緑色で表示
+                  showMessage('export-message', 'ダウンロードが完了しました', 'success');
+                }, 3500);
+                
+                // アプリの状態を更新
+                checkAppState();
+              } else {
+                console.error('ダウンロード処理失敗:', result.message);
+                showMessage('export-message', result.message, 'error');
+              }
+            })
+            .withFailureHandler(function(error) {
+              console.error('downloadExportCsv: エラー発生', error);
+              if (downloadBtn) downloadBtn.disabled = false;
+              showMessage('export-message', `エラーが発生しました: ${error}`, 'error');
+            })
+            .downloadExportCsv();
+        } catch (e) {
+          console.error('downloadExportCsv関数の実行中にエラーが発生しました:', e);
+          showMessage('export-message', `予期せぬエラー: ${e.message}`, 'error');
+        }
+      }
+      
+      // データ分析関数
+      function analyzeData() {
+        console.log('analyzeData関数が呼び出されました');
+        try {
+          const analysisBtn = document.getElementById('analysis-btn');
+          if (analysisBtn) {
+            analysisBtn.disabled = true;
+            console.log('分析ボタンを無効化しました');
+          }
+          
+          showMessage('analysis-message', '分析を実行中...', 'info');
+          
+          // Google Apps Script APIの確認
+          if (typeof google === 'undefined' || !google.script) {
+            console.error('analyzeData: Google Script APIが利用できません');
+            if (analysisBtn) analysisBtn.disabled = false;
+            showMessage('analysis-message', 'APIにアクセスできません。', 'error');
+            return;
+          }
+          
+          console.log('analyzeData: サーバーサイド処理を開始します');
+          google.script.run
+            .withSuccessHandler(function(result) {
+              console.log('analyzeData: 処理完了', result);
+              if (analysisBtn) analysisBtn.disabled = false;
+              
+              if (result.success) {
+                console.log('分析成功:', result.message);
+                showMessage('analysis-message', result.message, 'success');
+              } else {
+                console.error('分析失敗:', result.message);
+                showMessage('analysis-message', result.message, 'error');
+              }
+            })
+            .withFailureHandler(function(error) {
+              console.error('analyzeData: エラー発生', error);
+              if (analysisBtn) analysisBtn.disabled = false;
+              showMessage('analysis-message', `エラーが発生しました: ${error}`, 'error');
+            })
+            .analyzeDuplicateTitles();
+        } catch (e) {
+          console.error('analyzeData関数の実行中にエラーが発生しました:', e);
+          showMessage('analysis-message', `予期せぬエラー: ${e.message}`, 'error');
+        }
+      }
+      
+      // すべてのシートをリセット
+      function resetAllSheets() {
+        console.log('resetAllSheets関数が呼び出されました');
+        try {
+          console.log('確認ダイアログを表示します');
+          if (!confirm('すべてのシートを初期化しますか？この操作は元に戻せません。')) {
+            console.log('resetAllSheets: ユーザーがキャンセルしました');
+            return;
+          }
+          
+          console.log('ユーザーが確認しました。初期化を開始します');
+          
+          const resetAllBtn = document.getElementById('reset-all-btn');
+          if (resetAllBtn) {
+            resetAllBtn.disabled = true;
+            console.log('全リセットボタンを無効化しました');
+          } else {
+            console.error('reset-all-btn要素が見つかりません');
+          }
+          
+          // 自動処理タブにメッセージを表示
+          console.log('自動処理タブにメッセージを表示します');
+          showUnifiedMessage('すべてのシートを初期化しています...', 'info');
+          
+          // Google Apps Script APIの確認
+          console.log('Google Apps Script APIの確認をします');
+          if (typeof google === 'undefined' || !google.script) {
+            console.error('resetAllSheets: Google Script APIが利用できません');
+            if (resetAllBtn) resetAllBtn.disabled = false;
+            showUnifiedMessage('APIにアクセスできません。', 'error');
+            return;
+          }
+          
+          console.log('resetAllSheets: サーバーサイド処理を開始します: google.script.run.initializeAllSheets()');
+          google.script.run
+            .withSuccessHandler(function(result) {
+              console.log('resetAllSheets: 処理完了', result);
+              if (resetAllBtn) {
+                resetAllBtn.disabled = false;
+                console.log('リセットボタンを再度有効化しました');
+              }
+              
+              if (result.success) {
+                console.log('全シートのリセット成功:', result.message);
+                
+                // 成功メッセージを表示
+                showUnifiedMessage(result.message, 'success');
+                console.log('成功メッセージを表示しました');
+                
+                // 常にサイドバーを再読み込み
+                console.log('サイドバーを再読み込みします');
+                // 再読み込み前に明示的に状態を表示
+                showUnifiedMessage(result.message + '\nページを再読み込みします...', 'success');
+                  setTimeout(function() {
+                  // サイドバーの再読み込み方法を変更
+                  console.log('ページを再読み込みします');
+                  if (typeof google !== 'undefined' && google.script) {
+                    // サーバーサイドでサイドバーを再表示
+                    google.script.run
+                      .withSuccessHandler(function() {
+                        console.log('サイドバー再読み込み成功');
+                      })
+                      .withFailureHandler(function(error) {
+                        console.error('サイドバー再読み込みエラー:', error);
+                        try {
+                          // バックアップとしてブラウザの再読み込みを試行
+                          window.location.reload();
+                        } catch(reloadError) {
+                          console.error('ページ再読み込みエラー:', reloadError);
+                          showUnifiedMessage('ページの再読み込みに失敗しました。更新ボタンを押してください。', 'error');
+                        }
+                      })
+                      .reloadSidebar();
+                } else {
+                    try {
+                      // Google APIが利用できない場合はブラウザの再読み込みを試行
+                      window.location.reload();
+                    } catch (reloadError) {
+                      console.error('ページ再読み込みエラー:', reloadError);
+                      showUnifiedMessage('ページの再読み込みに失敗しました。更新ボタンを押してください。', 'error');
+                    }
+                  }
+                }, 1500); // 少し長めの遅延を設定
+              } else {
+                console.error('全シートのリセット失敗:', result.message);
+                showUnifiedMessage(result.message, 'error');
+              }
+            })
+            .withFailureHandler(function(error) {
+              console.error('resetAllSheets: エラー発生', error);
+              if (resetAllBtn) resetAllBtn.disabled = false;
+              showUnifiedMessage(`エラーが発生しました: ${error}`, 'error');
+            })
+            .initializeAllSheets();
+          
+          console.log('initializeAllSheetsのリクエストを送信しました。処理完了を待機中...');
+        } catch (e) {
+          console.error('resetAllSheets関数の実行中にエラーが発生しました:', e);
+          showUnifiedMessage(`予期せぬエラー: ${e.message}`, 'error');
+        }
+      }
+      
+      // メッセージを表示する関数
+      function showMessage(elementId, text, type) {
+        console.log(`showMessage: [${type}] ${text} (${elementId})`);
+        try {
+          const element = document.getElementById(elementId);
+          if (!element) {
+            console.error(`showMessage: 要素 "${elementId}" が見つかりません`);
+            return;
+          }
+          
+          // ステータスメッセージは全て successスタイルにする
+          if (text.includes('件のデータがインポートされています') ||
+              text.includes('件の重複グループ') ||
+              text.includes('検出されています') ||
+              text.includes('件のアイテムが出力対象として設定されています') ||
+              text.includes('ダウンロードが完了しました') ||
+              text.includes('分析が完了しました')) {
+            type = 'success';
+          }
+          
+          // 処理中メッセージはinfo、エラーはerrorに
+          if (text.includes('中...') || text.includes('検出しています')) {
+            type = 'info';
+          }
+          
+          element.className = `message ${type}`;
+          element.innerHTML = text;
+          element.style.display = 'block';
+        } catch (e) {
+          console.error('showMessage関数の実行中にエラーが発生しました:', e);
+        }
+      }
+      
+      // エラーハンドリング関数
+      function handleError(error) {
+        console.error('handleError: エラーが発生しました:', error);
+        try {
+          if (typeof error === 'object' && error !== null) {
+            // エラーオブジェクトの場合は詳細情報を出力
+            console.error('エラー詳細:', {
+              message: error.message,
+              name: error.name,
+              stack: error.stack
+            });
+          }
+          
+          // ユーザーにエラーを通知
+          const errorMessage = error && error.message ? error.message : String(error);
+          alert(`エラーが発生しました: ${errorMessage}`);
+        } catch (e) {
+          console.error('handleError関数の実行中に別のエラーが発生しました:', e);
+          alert('エラー処理中に問題が発生しました。');
+        }
+      }
+
+      /**
+       * 自動処理ハンドラの設定
+       */
+      function setupAutoProcessHandlers() {
+        console.log('自動処理ハンドラを設定します');
+        
+        // ファイル選択UI要素
+        const autoFileUpload = document.getElementById('auto-file-upload');
+        const autoFileSelectBtn = document.getElementById('auto-file-select-btn');
+        const autoFileDropArea = document.getElementById('auto-file-drop-area');
+        const autoFilePreview = document.getElementById('auto-file-preview');
+        const autoProcessBtn = document.getElementById('auto-process-btn');
+        
+        console.log('自動処理UI要素:',
+          '入力要素:', autoFileUpload ? 'あり' : 'なし',
+          '選択ボタン:', autoFileSelectBtn ? 'あり' : 'なし',
+          'ドロップエリア:', autoFileDropArea ? 'あり' : 'なし',
+          'プレビュー:', autoFilePreview ? 'あり' : 'なし',
+          '実行ボタン:', autoProcessBtn ? 'あり' : 'なし'
+        );
+
+        // 自動処理用のドロップエリア設定
+        if (autoFileDropArea) {
+          // ドラッグイベントの防止（デフォルト動作のキャンセル）
+          ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            autoFileDropArea.addEventListener(eventName, function(e) {
+              e.preventDefault();
+              e.stopPropagation();
+              console.log(eventName + ' イベントをキャンセルしました');
+            }, false);
+          });
+          
+          // ドラッグ中のハイライト
+          ['dragenter', 'dragover'].forEach(eventName => {
+            autoFileDropArea.addEventListener(eventName, function() {
+              console.log('ドラッグエリアをハイライト');
+              autoFileDropArea.classList.add('highlight');
+            }, false);
+          });
+          
+          ['dragleave', 'drop'].forEach(eventName => {
+            autoFileDropArea.addEventListener(eventName, function() {
+              console.log('ドラッグエリアのハイライトを解除');
+              autoFileDropArea.classList.remove('highlight');
+            }, false);
+          });
+          
+          // ドロップ処理
+          autoFileDropArea.addEventListener('drop', function(e) {
+            console.log('ファイルがドロップされました');
+            e.preventDefault();
+            e.stopPropagation();
+            
+            const files = e.dataTransfer.files;
+            if (files && files.length > 0) {
+              handleAutoFileProcess(files[0]);
+            }
+          }, false);
+        } else {
+          console.error('auto-file-drop-areaエレメントが見つかりません');
+        }
+        
+        // 自動処理用ファイル選択
+        if (autoFileUpload) {
+          autoFileUpload.addEventListener('change', function(e) {
+            console.log('ファイル選択イベント発生');
+            const files = e.target.files;
+            if (files && files.length > 0) {
+              handleAutoFileProcess(files[0]);
+            }
+          }, false);
+        } else {
+          console.error('auto-file-uploadエレメントが見つかりません');
+        }
+        
+        // 自動処理用ファイル選択ボタン
+        if (autoFileSelectBtn) {
+          autoFileSelectBtn.addEventListener('click', function(e) {
+            console.log('ファイル選択ボタンクリック');
+            e.preventDefault();
+            e.stopPropagation();
+            if (autoFileUpload) {
+              autoFileUpload.click();
+            }
+          }, false);
+        }
+        
+        // 自動処理ボタン
+        if (autoProcessBtn) {
+          autoProcessBtn.addEventListener('click', startAutoProcess, false);
+        } else {
+          console.error('auto-process-btnエレメントが見つかりません');
+        }
+      }
+
+      /**
+       * 自動処理用ファイル処理の共通関数
+       */
+      function handleAutoFileProcess(file) {
+        console.log('ファイル処理:', file.name);
+        
+        if (!file.name.toLowerCase().endsWith('.csv')) {
+          alert('CSVファイルのみアップロードできます。');
+          return;
+        }
+        
+        // ファイルプレビュー表示
+        handleAutoFilePreview(file);
+        
+        // ファイル内容を読み込み
+        const reader = new FileReader();
+        reader.onload = function(e) {
+          window.autoFileContent = e.target.result;
+          console.log('ファイル読み込み完了:', file.name, 'サイズ:', formatFileSize(file.size));
+          
+          // 自動処理ボタンを有効化
+          const autoProcessBtn = document.getElementById('auto-process-btn');
+          if (autoProcessBtn) {
+            autoProcessBtn.disabled = false;
+          }
+        };
+        
+        reader.onerror = function(e) {
+          console.error('ファイル読み込みエラー:', e);
+          alert('ファイルの読み込みに失敗しました。');
+        };
+        
+        reader.readAsText(file);
+      }
+
+      /**
+       * 自動処理用ファイルプレビュー表示
+       */
+      function handleAutoFilePreview(file) {
+        console.log('ファイルプレビュー表示:', file.name);
+        const filePreview = document.getElementById('auto-file-preview');
+        if (filePreview) {
+          filePreview.style.display = 'block';
+          filePreview.innerHTML = `
+            <div class="file-preview-info">
+              <span class="material-icons file-icon">description</span>
+              <div class="file-details">
+                <div class="file-name">${file.name}</div>
+                <div class="file-size">${formatFileSize(file.size)}</div>
+                <div class="file-type">text/csv</div>
+              </div>
+              <button class="file-remove-btn" onclick="clearAutoFile()">
+                <span class="material-icons">close</span>
+              </button>
+            </div>
+          `;
+        }
+      }
+
+      /**
+       * 自動処理用ファイルクリア（グローバルスコープ）
+       */
+      function clearAutoFile() {
+        console.log('ファイル選択をクリアします');
+        window.autoFileContent = null;
+        const filePreview = document.getElementById('auto-file-preview');
+        if (filePreview) {
+          filePreview.style.display = 'none';
+          filePreview.innerHTML = '';
+        }
+        
+        const fileInput = document.getElementById('auto-file-upload');
+        if (fileInput) {
+          fileInput.value = '';
+        }
+        
+        // 自動処理ボタンを無効化
+        const autoProcessBtn = document.getElementById('auto-process-btn');
+        if (autoProcessBtn) {
+          autoProcessBtn.disabled = true;
+        }
+      }
+
+      /**
+       * 自動処理結果CSVのダウンロード
+       * @param {Array} data - CSVデータの2次元配列
+       * @param {string} fileName - ダウンロードされるファイル名
+       * @param {boolean} autoDownload - trueの場合、自動的にダウンロードを実行
+       */
+      function downloadAutoProcessedCSV(data, fileName, autoDownload) {
+        console.log('CSVダウンロード処理を開始:', fileName, '自動ダウンロード:', autoDownload);
+        
+        showUnifiedMessage(`CSVファイル「${fileName}」のダウンロードを準備中...`, 'info');
+        
+        try {
+          // CSVデータの形式を確認
+          if (!data || !Array.isArray(data) || data.length === 0) {
+            throw new Error("ダウンロードするデータがありません");
+          }
+          
+          // CSVデータを文字列に変換
+          let csvContent = data.map(row => 
+            row.map(cell => {
+              if (cell === null || cell === undefined) return '';
+              let cellStr = String(cell);
+              cellStr = cellStr.replace(/"/g, '""');
+              if (cellStr.includes(',') || cellStr.includes('"') || cellStr.includes('\n')) {
+                return '"' + cellStr + '"';
+              }
+              return cellStr;
+            }).join(',')
+          ).join('\n');
+          
+          // BOMを追加してUTF-8として認識されるようにする
+          const bom = '\ufeff';
+          csvContent = bom + csvContent;
+          
+          // Blobの作成とダウンロード
+          const blob = new Blob([csvContent], {type: 'text/csv;charset=utf-8;'});
+          
+          const downloadLink = document.createElement('a');
+          const url = window.URL.createObjectURL(blob);
+          downloadLink.href = url;
+          downloadLink.download = fileName;
+          downloadLink.style.display = 'none';
+          document.body.appendChild(downloadLink);
+          
+          // クリックしてダウンロード
+          downloadLink.click();
+          
+          // 後片付け
+          setTimeout(function() {
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(downloadLink);
+            showUnifiedMessage(`CSVファイル「${fileName}」のダウンロードが完了しました`, 'success');
+          }, 100);
+          
+          return true;
+        } catch (e) {
+          console.error('CSVダウンロードエラー:', e);
+          showUnifiedMessage('CSVダウンロード中にエラーが発生しました: ' + e.message, 'error');
+          
+          // サーバー側のダウンロード処理をフォールバックとして使用
+          google.script.run
+            .withSuccessHandler(function(result) {
+              console.log('サーバー側ダウンロード処理結果:', result);
+              // ダイアログを表示
+              const dialog = showDialog('CSVダウンロード', result);
+            })
+            .withFailureHandler(function(error) {
+              console.error('サーバー側ダウンロードエラー:', error);
+              showUnifiedMessage('ダウンロード準備中にエラーが発生しました: ' + error.message, 'error');
+            })
+            .downloadExportCsv();
+            
+          return false;
+        }
+      }
+
+      /**
+       * ファイルサイズのフォーマット
+       */
+      function formatFileSize(bytes) {
+        if (bytes < 1024) return bytes + ' B';
+        else if (bytes < 1048576) return (bytes / 1024).toFixed(2) + ' KB';
+        else return (bytes / 1048576).toFixed(2) + ' MB';
+      }
+
+      /**
+       * ダイアログ表示
+       */
+      function showDialog(title, content) {
+        google.script.ui.showModalDialog({
+          title: title,
+          width: 600,
+          height: 400,
+          html: content
+        });
+      }
+
+      /**
+       * 自動処理タブのファイル選択ボタンクリックハンドラ
+       * インラインHTMLで直接呼び出し可能
+       */
+      function handleAutoFileButtonClick() {
+        console.log('自動処理ファイル選択ボタンがクリックされました');
+        const fileInput = document.getElementById('auto-file-upload');
+        if (fileInput) {
+          fileInput.click();
+        } else {
+          console.error('auto-file-upload要素が見つかりません');
+          alert('ファイル選択要素にアクセスできません。ページを再読み込みしてください。');
+        }
+        return false; // イベント伝播を止める
+      }
+
+      /**
+       * 自動処理用ファイル選択の変更ハンドラ
+       * インラインHTMLで直接呼び出し可能
+       */
+      function handleAutoFileInputChange(inputElement) {
+        console.log('ファイル選択イベント発生 (インライン)');
+        if (inputElement && inputElement.files && inputElement.files.length > 0) {
+          const file = inputElement.files[0];
+          handleAutoFileProcess(file);
+        } else {
+          console.warn('ファイルが選択されていないか、ファイル要素にアクセスできません');
+        }
+      }
+
+      /**
+       * ボタン類のイベントハンドラを設定する関数
+       */
+      function setupButtonHandlers() {
+        console.log('setupButtonHandlers: ボタンのイベントハンドラを設定します');
+        
+        // reset-all-btn ボタンにイベントハンドラを設定
+        const resetAllBtn = document.getElementById('reset-all-btn');
+        if (resetAllBtn) {
+          console.log('resetAllBtn要素が見つかりました。イベントリスナーを設定します');
+          resetAllBtn.removeEventListener('click', resetAllSheets); // 既存のリスナーを削除
+          resetAllBtn.addEventListener('click', function(e) {
+            console.log('resetAllBtnがクリックされました');
+            e.preventDefault();
+            resetAllSheets();
+          });
+        } else {
+          console.error('reset-all-btn要素が見つかりません');
+        }
+      }
+
+      // すべてのシート初期化の直接呼び出し関数
+      function directResetAllSheets() {
+        console.log('directResetAllSheets: 直接APIを呼び出します');
+        
+        // 確認メッセージを先に表示して、ユーザーが確実に確認できるようにする
+        try {
+          const confirmMsg = '本当にすべてのシートを初期化しますか？\nこの操作は元に戻せません。';
+          console.log('確認ダイアログを表示します: ' + confirmMsg);
+          
+          // 別の方法で確認ダイアログを表示（ブラウザのネイティブconfirm）
+          if (window.confirm(confirmMsg) !== true) {
+            console.log('初期化がユーザーによってキャンセルされました');
+            return false;
+          }
+          
+          console.log('初期化確認: ユーザーが確認しました。初期化を実行します。');
+          
+          // ボタンを無効化
+          const resetBtn = document.getElementById('reset-all-btn');
+          if (resetBtn) {
+            console.log('リセットボタンを無効化します');
+            resetBtn.disabled = true;
+          }
+          
+          // メッセージを表示
+          const msgElement = document.getElementById('auto-process-message');
+          if (msgElement) {
+            console.log('処理メッセージを表示します');
+            msgElement.textContent = 'すべてのシートを初期化しています...';
+            msgElement.className = 'message info';
+            msgElement.style.display = 'block';
+          } else {
+            console.error('auto-process-message要素が見つかりません');
+          }
+          
+          // サーバー側の処理を直接呼び出し
+          console.log('サーバー側関数initializeAllSheetsを呼び出します');
+          google.script.run
+            .withSuccessHandler(function(result) {
+              console.log('初期化完了:', result);
+              
+              // ボタンを再度有効化
+              if (resetBtn) resetBtn.disabled = false;
+              
+              // メッセージを表示
+              if (msgElement) {
+                msgElement.textContent = result.message;
+                msgElement.className = result.success ? 'message success' : 'message error';
+              }
+              
+              // アラートでも表示
+              alert(result.message);
+              
+              // 再読み込みが必要な場合
+              if (result.success && result.requireReload) {
+                setTimeout(function() {
+                  google.script.run.reloadSidebar();
+                }, 500);
+              }
+            })
+            .withFailureHandler(function(error) {
+              console.error('初期化エラー:', error);
+              
+              // ボタンを再度有効化
+              if (resetBtn) resetBtn.disabled = false;
+              
+              // メッセージを表示
+              if (msgElement) {
+                msgElement.textContent = '初期化中にエラーが発生しました: ' + error;
+                msgElement.className = 'message error';
+                msgElement.style.display = 'block';
+              }
+              
+              // アラートでも表示
+              alert('エラーが発生しました: ' + error);
+            })
+            .initializeAllSheets();
+          
+          console.log('initializeAllSheetsのリクエストを送信しました');
+          return true;
+        } catch (e) {
+          console.error('directResetAllSheets関数でエラーが発生しました:', e);
+          alert('エラーが発生しました: ' + e.message);
+          return false;
+        }
+      }
+
+      /**
+       * シート初期化実行関数 - 高速化バージョン
+       */
+      function runInitializeSheets() {
+        try {
+          console.log('シート初期化開始');
+          
+          // ボタンを無効化して重複クリックを防止
+          const initBtn = document.getElementById('initialize-sheets-btn');
+          if (initBtn) {
+            initBtn.disabled = true;
+            console.log('初期化ボタンを無効化しました');
+          }
+          
+          // 進捗表示 - 即時表示して体感速度を向上
+          const progressStatus = document.getElementById('initialize-progress-status');
+          const progressMessage = document.getElementById('initialize-progress-message');
+          if (progressStatus) {
+            progressStatus.style.display = 'flex';
+            if (progressMessage) progressMessage.textContent = 'シート初期化中...';
+          }
+          
+          // 統一メッセージも表示
+          showUnifiedMessage('シートを初期化しています...', 'info');
+          
+          console.log('サーバー側処理を呼び出します: initializeAllSheets');
+          
+          // サーバー側処理呼び出し - 直接実行してレスポンスを待つ
+          google.script.run
+            .withSuccessHandler(function(result) {
+              console.log('初期化結果を受信:', result);
+              
+              // ボタンを再有効化
+              if (initBtn) initBtn.disabled = false;
+              
+              // 進捗表示を更新
+              if (progressStatus && progressMessage) {
+                if (result && result.success) {
+                  progressMessage.textContent = '初期化が完了しました';
+                } else {
+                  progressStatus.style.display = 'none';
+                }
+              }
+              
+              if (result && result.success) {
+                // 成功メッセージを表示
+                showUnifiedMessage('シートの初期化が完了しました', 'success');
+                
+                // 即時リロード（遅延なし）
+                console.log('サイドバーを再読み込みします');
+                google.script.run.reloadSidebar();
+              } else {
+                // 初期化中断またはエラーのメッセージ
+                const message = result ? result.message : '初期化プロセスが中断されました';
+                const type = result && result.userCancelled ? 'info' : 'error';
+                showUnifiedMessage(message, type);
+                
+                // 進捗表示を非表示
+                if (progressStatus) progressStatus.style.display = 'none';
+              }
+            })
+            .withFailureHandler(function(error) {
+              console.error('初期化エラー:', error);
+              
+              // ボタンを再有効化
+              if (initBtn) initBtn.disabled = false;
+              
+              // 進捗表示を非表示
+              if (progressStatus) progressStatus.style.display = 'none';
+              
+              // エラーメッセージを表示
+              showUnifiedMessage('初期化エラー: ' + error, 'error');
+            })
+            .initializeAllSheets();
+            
+          console.log('サーバー処理呼び出し完了、結果待ち');
+        } catch (e) {
+          console.error('初期化処理でエラー発生:', e);
+          showUnifiedMessage('初期化処理でエラーが発生しました: ' + e.message, 'error');
+          
+          // ボタンを再有効化
+          const initBtn = document.getElementById('initialize-sheets-btn');
+          if (initBtn) initBtn.disabled = false;
+          
+          // 進捗表示を非表示
+          const progressStatus = document.getElementById('initialize-progress-status');
+          if (progressStatus) progressStatus.style.display = 'none';
+        }
+      }
+    </script>
+  </body>
+</html> 
