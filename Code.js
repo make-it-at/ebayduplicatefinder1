@@ -8,7 +8,7 @@
 var EbayTool = (function() {
   // プライベート変数と定数
   const CONFIG = {
-    VERSION: '1.6.44',
+    VERSION: '1.6.45',
     SHEET_NAMES: {
       IMPORT: 'インポートデータ',
       DUPLICATES: '重複リスト',
@@ -2268,164 +2268,72 @@ function downloadExportCsv() {
  */
 function initializeAllSheets() {
   try {
-    console.log("initializeAllSheets: 関数が呼び出されました");
-    
-    // UIオブジェクトを取得
-    const ui = SpreadsheetApp.getUi();
-    console.log("initializeAllSheets: UIオブジェクトを取得しました");
-    
-    // 明示的な確認ダイアログを表示
-    const response = ui.alert(
-      'シート初期化の確認',
-      'すべてのシートを初期化します。この操作は元に戻せません。続行しますか？',
-      ui.ButtonSet.YES_NO
-    );
-    
-    console.log("initializeAllSheets: 確認ダイアログの応答:", response);
-    
-    // キャンセルした場合
-    if (response !== ui.Button.YES) {
-      console.log("initializeAllSheets: ユーザーがキャンセルしました");
-      return { 
-        success: false, 
-        message: '初期化をキャンセルしました。',
-        userCancelled: true 
-      };
-    }
-    
-    console.log("initializeAllSheets: 初期化作業を開始します");
-    
+    console.log("🔧 initializeAllSheets: 関数が呼び出されました");
+    const startTime = new Date().getTime();
+
     const ss = SpreadsheetApp.getActiveSpreadsheet();
+    console.log(`📊 スプレッドシート名: ${ss.getName()}`);
     
-    // 保持するシート名
-    const logSheetName = EbayTool.getSheetName('LOG');
-    const operationLogSheetName = "操作ログ";
-    
-    // 必要なシート名
+    // 必要なシート名（最小限）
     const requiredSheets = [
       EbayTool.getSheetName('IMPORT'),
       EbayTool.getSheetName('DUPLICATES'),
-      EbayTool.getSheetName('EXPORT'),
-      EbayTool.getSheetName('ANALYSIS')
+      EbayTool.getSheetName('EXPORT')
     ];
-    
+
+    console.log(`✅ 必要なシート: ${requiredSheets.join(', ')}`);
+
     // すべてのシートを取得
     const allSheets = ss.getSheets();
-    const existingSheets = new Map(); // シート名→シートオブジェクトのマップ
-    const sheetsToDelete = []; // 削除対象のシート
-    
-    // 既存シートの分類
-    for (let i = 0; i < allSheets.length; i++) {
+    console.log(`📋 現在のシート数: ${allSheets.length}`);
+
+    const sheetsToKeep = new Set(requiredSheets);
+    let deletedCount = 0;
+    let clearedCount = 0;
+
+    // シートを逆順で処理（削除時のインデックスずれ防止）
+    for (let i = allSheets.length - 1; i >= 0; i--) {
       const sheet = allSheets[i];
       const sheetName = sheet.getName();
-      
-      // 保持するシートはスキップ
-      if (sheetName === logSheetName || sheetName === operationLogSheetName) {
-        existingSheets.set(sheetName, sheet);
-        continue;
-      }
-      
-      // 必要なシートは保持してクリア
-      if (requiredSheets.includes(sheetName)) {
-        // シートをクリアして再利用
+
+      if (sheetsToKeep.has(sheetName)) {
+        // 必要なシートはクリアして再利用
         sheet.clear();
-        existingSheets.set(sheetName, sheet);
-        console.log(`シート「${sheetName}」をクリアしました`);
+        clearedCount++;
+        console.log(`🧹 シート「${sheetName}」をクリアしました`);
       } else {
-        // 不要なシートは削除対象としてマーク
-        sheetsToDelete.push(sheet);
-      }
-    }
-    
-    // 不要なシートを削除（一括削除は手順として注意）
-    for (let i = 0; i < sheetsToDelete.length; i++) {
-      const sheet = sheetsToDelete[i];
-      try {
-        const sheetName = sheet.getName();
-        console.log(`削除対象シート: 名前="${sheetName}", ID=${sheet.getSheetId()}`);
-
-        // スプレッドシートに最低1つのシートは必要なので、最後のシートは削除しない
-        const currentSheetCount = ss.getSheets().length;
-        console.log(`現在のシート数: ${currentSheetCount}`);
-
-        if (currentSheetCount > 1) {
-          // シートが実際に存在するか再確認
-          const verifySheet = ss.getSheetByName(sheetName);
-          if (verifySheet) {
+        // 不要なシートは削除（最後の1枚は残す）
+        if (ss.getSheets().length > 1) {
+          try {
             ss.deleteSheet(sheet);
-            console.log(`✓ シート「${sheetName}」を削除しました`);
-          } else {
-            console.log(`⚠ シート「${sheetName}」は既に削除されています（スキップ）`);
+            deletedCount++;
+            console.log(`🗑️ シート「${sheetName}」を削除しました`);
+          } catch (e) {
+            console.log(`⚠️ シート「${sheetName}」削除失敗: ${e.message}`);
           }
         } else {
-          console.log(`⚠ シート「${sheetName}」は最後のシートのため削除をスキップしました`);
-          sheet.clear(); // 代わりにクリア
-          console.log(`✓ シート「${sheetName}」をクリアしました`);
+          sheet.clear();
+          console.log(`⚠️ 最後のシート「${sheetName}」はクリアのみ`);
         }
-      } catch (error) {
-        console.error(`✗ シート削除中にエラー: ${error.message}`);
-        console.error(`  スタック: ${error.stack}`);
-        // エラーが発生しても処理を続行
       }
     }
-    
+
     // 必要なシートで存在しないものを作成
     for (const sheetName of requiredSheets) {
-      if (!existingSheets.has(sheetName)) {
-        const newSheet = ss.insertSheet(sheetName);
-        existingSheets.set(sheetName, newSheet);
-        console.log(`シート「${sheetName}」を新規作成しました`);
+      if (!ss.getSheetByName(sheetName)) {
+        ss.insertSheet(sheetName);
+        console.log(`➕ シート「${sheetName}」を新規作成しました`);
       }
     }
-    
-    // 操作ログシートが存在しない場合は作成
-    if (!existingSheets.has(operationLogSheetName)) {
-      const operationLogSheet = ss.insertSheet(operationLogSheetName);
-      
-      // ヘッダー行の設定
-      operationLogSheet.appendRow([
-        "操作日時", 
-        "操作内容", 
-        "ステータス", 
-        "処理時間(秒)", 
-        "データ件数", 
-        "詳細情報"
-      ]);
-      
-      // ヘッダー行の書式設定
-      operationLogSheet.getRange(1, 1, 1, 6).setBackground("#f3f4f6").setFontWeight("bold");
-      console.log(`シート「${operationLogSheetName}」を新規作成しました`);
-    }
-    
-    // ログシートが存在しない場合は作成
-    if (!existingSheets.has(logSheetName)) {
-      const logSheet = ss.insertSheet(logSheetName);
-      
-      // ヘッダー行の設定
-      logSheet.appendRow(['タイムスタンプ', '関数', 'エラータイプ', 'エラーメッセージ', 'コンテキスト', 'スタックトレース']);
-      
-      // ヘッダー行の書式設定
-      logSheet.getRange(1, 1, 1, 6)
-        .setBackground(EbayTool.getColor('PRIMARY'))
-        .setFontColor('white')
-        .setFontWeight('bold');
-        
-      // 列幅の設定
-      logSheet.setColumnWidth(1, 150); // タイムスタンプ
-      logSheet.setColumnWidth(2, 100); // 関数
-      logSheet.setColumnWidth(3, 100); // エラータイプ
-      logSheet.setColumnWidth(4, 250); // エラーメッセージ
-      logSheet.setColumnWidth(5, 200); // コンテキスト
-      logSheet.setColumnWidth(6, 400); // スタックトレース
-      
-      console.log(`シート「${logSheetName}」を新規作成しました`);
-    }
-    
-    console.log("initializeAllSheets: すべてのシートを初期化しました");
-    
-    return { 
-      success: true, 
-      message: 'すべてのシートを初期化しました。', 
+
+    const endTime = new Date().getTime();
+    const duration = ((endTime - startTime) / 1000).toFixed(2);
+
+    console.log(`✅ 初期化完了: ${clearedCount}シートクリア, ${deletedCount}シート削除 (${duration}秒)`);
+
+    return {
+      success: true,
+      message: `初期化完了 (${duration}秒)`,
       requireReload: true
     };
   } catch (error) {
