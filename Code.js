@@ -8,7 +8,7 @@
 var EbayTool = (function() {
   // プライベート変数と定数
   const CONFIG = {
-    VERSION: '1.6.43',
+    VERSION: '1.6.44',
     SHEET_NAMES: {
       IMPORT: 'インポートデータ',
       DUPLICATES: '重複リスト',
@@ -2341,16 +2341,30 @@ function initializeAllSheets() {
     for (let i = 0; i < sheetsToDelete.length; i++) {
       const sheet = sheetsToDelete[i];
       try {
+        const sheetName = sheet.getName();
+        console.log(`削除対象シート: 名前="${sheetName}", ID=${sheet.getSheetId()}`);
+
         // スプレッドシートに最低1つのシートは必要なので、最後のシートは削除しない
-        if (ss.getSheets().length > 1) {
-          ss.deleteSheet(sheet);
-          console.log(`シート「${sheet.getName()}」を削除しました`);
+        const currentSheetCount = ss.getSheets().length;
+        console.log(`現在のシート数: ${currentSheetCount}`);
+
+        if (currentSheetCount > 1) {
+          // シートが実際に存在するか再確認
+          const verifySheet = ss.getSheetByName(sheetName);
+          if (verifySheet) {
+            ss.deleteSheet(sheet);
+            console.log(`✓ シート「${sheetName}」を削除しました`);
+          } else {
+            console.log(`⚠ シート「${sheetName}」は既に削除されています（スキップ）`);
+          }
         } else {
-          console.log(`シート「${sheet.getName()}」は最後のシートのため削除をスキップしました`);
+          console.log(`⚠ シート「${sheetName}」は最後のシートのため削除をスキップしました`);
           sheet.clear(); // 代わりにクリア
+          console.log(`✓ シート「${sheetName}」をクリアしました`);
         }
       } catch (error) {
-        console.error(`シート「${sheet.getName()}」の削除中にエラー:`, error.message);
+        console.error(`✗ シート削除中にエラー: ${error.message}`);
+        console.error(`  スタック: ${error.stack}`);
         // エラーが発生しても処理を続行
       }
     }
