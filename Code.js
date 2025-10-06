@@ -8,7 +8,7 @@
 var EbayTool = (function() {
   // プライベート変数と定数
   const CONFIG = {
-    VERSION: '1.6.42',
+    VERSION: '1.6.43',
     SHEET_NAMES: {
       IMPORT: 'インポートデータ',
       DUPLICATES: '重複リスト',

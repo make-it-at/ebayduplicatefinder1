@@ -1216,7 +1216,7 @@
 
     <script>
       // グローバル変数
-      const CLIENT_VERSION = '1.6.42'; // クライアント側のバージョン
+      const CLIENT_VERSION = '1.6.43'; // クライアント側のバージョン
       let currentTab = 'auto';  // 初期タブを自動処理に変更
       let serverVersion = '';
       let fileContent = null;
@@ -1987,16 +1987,15 @@
           google.script.run
             .withSuccessHandler(function(result) {
               console.log('インポートのみ処理完了:', result);
-              
-              // ボタンを再有効化
-              if (importOnlyBtn) importOnlyBtn.disabled = false;
-              if (autoProcessBtn) autoProcessBtn.disabled = false;
-              setFilterButtonState(true, 'インポートのみ処理完了');
-              
+
               if (result.success) {
                 showUnifiedMessage(`インポート完了: ${result.message}`, 'success');
                 // アプリ状態更新でUI状態を正しく設定
                 checkAppState();
+
+                // ボタンを再有効化
+                ButtonStateManager.setState('import-only-btn', false, '既にインポート済み');
+                ButtonStateManager.setState('filter-us-btn', true, 'インポート完了');
 
                 // 3秒後にメッセージをクリア
                 setTimeout(() => {
@@ -2004,6 +2003,9 @@
                 }, 3000);
               } else {
                 showUnifiedMessage('インポート失敗: ' + result.message, 'error');
+                // エラー時はボタンを元に戻す
+                ButtonStateManager.setState('import-only-btn', true, 'インポート失敗');
+                ButtonStateManager.setState('filter-us-btn', false, 'インポート失敗');
               }
             })
             .withFailureHandler(function(error) {
@@ -2012,7 +2014,7 @@
               // タイムアウトエラーの場合は段階的確認（カスケード方式）
               if (error.message && error.message.includes('タイムアウト')) {
                 console.log('⚠️  タイムアウト検出 - 段階的処理完了状況を確認中...');
-                showUnifiedMessage('処理にタイムアウトが発生しましたが、段階的にデータ確認中です...', 'warning');
+                showUnifiedMessage('処理にタイムアウトが発生しました。データを確認中...', 'warning');
 
                 // 第1段階: 軽量確認（2秒後）
                 setTimeout(function() {
@@ -2022,15 +2024,15 @@
                       console.log('✅ 軽量確認成功:', checkResult);
                       if (checkResult && checkResult.hasData) {
                         showUnifiedMessage('✅ インポートが完了しました！（' + checkResult.rowCount + '行）', 'success');
-                        setFilterButtonState(true, '軽量確認でインポート成功');
+                        ButtonStateManager.setState('import-only-btn', false, '既にインポート済み');
+                        ButtonStateManager.setState('filter-us-btn', true, 'インポート完了（軽量確認）');
                       } else {
                         showUnifiedMessage('❌ インポートに失敗しました（軽量確認）', 'error');
-                        setFilterButtonState(false, '軽量確認でインポート失敗');
+                        ButtonStateManager.setState('import-only-btn', true, 'インポート失敗（軽量確認）');
+                        ButtonStateManager.setState('filter-us-btn', false, 'インポート失敗（軽量確認）');
                       }
 
-                      // ボタンを再有効化
-                      if (importOnlyBtn) importOnlyBtn.disabled = false;
-                      if (autoProcessBtn) autoProcessBtn.disabled = false;
+                      checkAppState(); // UI状態を更新
                     })
                     .withFailureHandler(function(lightError) {
                       console.error('⚠️ 軽量確認もタイムアウト、超軽量確認に切り替え:', lightError);
@@ -2043,24 +2045,23 @@
                             console.log('✅ 超軽量確認成功:', ultraResult);
                             if (ultraResult && ultraResult.hasData) {
                               showUnifiedMessage('✅ インポート確認完了！（' + ultraResult.rowCount + '行・超軽量確認）', 'success');
-                              setFilterButtonState(true, '超軽量確認でインポート成功');
+                              ButtonStateManager.setState('import-only-btn', false, '既にインポート済み');
+                              ButtonStateManager.setState('filter-us-btn', true, 'インポート完了（超軽量確認）');
                             } else {
                               showUnifiedMessage('❌ インポートに失敗しました（超軽量確認）', 'error');
-                              setFilterButtonState(false, '超軽量確認でインポート失敗');
+                              ButtonStateManager.setState('import-only-btn', true, 'インポート失敗（超軽量確認）');
+                              ButtonStateManager.setState('filter-us-btn', false, 'インポート失敗（超軽量確認）');
                             }
 
-                            // ボタンを再有効化
-                            if (importOnlyBtn) importOnlyBtn.disabled = false;
-                            if (autoProcessBtn) autoProcessBtn.disabled = false;
+                            checkAppState(); // UI状態を更新
                           })
                           .withFailureHandler(function(ultraError) {
                             console.error('❌ 超軽量確認も失敗:', ultraError);
                             showUnifiedMessage('❌ 全ての確認方法が失敗しました。手動でシートを確認してください。', 'error');
 
-                            // ボタンを再有効化
-                            if (importOnlyBtn) importOnlyBtn.disabled = false;
-                            if (autoProcessBtn) autoProcessBtn.disabled = false;
-                            setFilterButtonState(false, '全確認失敗');
+                            ButtonStateManager.setState('import-only-btn', true, '全確認失敗');
+                            ButtonStateManager.setState('filter-us-btn', false, '全確認失敗');
+                            checkAppState(); // UI状態を更新
                           })
                           .checkImportStatusUltraLight();
                       }, 1000);
@@ -2071,10 +2072,9 @@
                 // 一般的なエラー
                 showUnifiedMessage('インポート中にエラーが発生しました: ' + error.message, 'error');
 
-                // ボタンを再有効化
-                if (importOnlyBtn) importOnlyBtn.disabled = false;
-                if (autoProcessBtn) autoProcessBtn.disabled = false;
-                setFilterButtonState(true, 'インポートのみエラー後の復旧');
+                ButtonStateManager.setState('import-only-btn', true, 'インポートエラー');
+                ButtonStateManager.setState('filter-us-btn', false, 'インポートエラー');
+                checkAppState(); // UI状態を更新
               }
             })
             .importCsvData(window.autoFileContent);
