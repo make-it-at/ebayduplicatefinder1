@@ -8,7 +8,7 @@
 var EbayTool = (function() {
   // プライベート変数と定数
   const CONFIG = {
-    VERSION: '1.6.40',
+    VERSION: '1.6.42',
     SHEET_NAMES: {
       IMPORT: 'インポートデータ',
       DUPLICATES: '重複リスト',
@@ -2340,8 +2340,19 @@ function initializeAllSheets() {
     // 不要なシートを削除（一括削除は手順として注意）
     for (let i = 0; i < sheetsToDelete.length; i++) {
       const sheet = sheetsToDelete[i];
-      ss.deleteSheet(sheet);
-      console.log(`シート「${sheet.getName()}」を削除しました`);
+      try {
+        // スプレッドシートに最低1つのシートは必要なので、最後のシートは削除しない
+        if (ss.getSheets().length > 1) {
+          ss.deleteSheet(sheet);
+          console.log(`シート「${sheet.getName()}」を削除しました`);
+        } else {
+          console.log(`シート「${sheet.getName()}」は最後のシートのため削除をスキップしました`);
+          sheet.clear(); // 代わりにクリア
+        }
+      } catch (error) {
+        console.error(`シート「${sheet.getName()}」の削除中にエラー:`, error.message);
+        // エラーが発生しても処理を続行
+      }
     }
     
     // 必要なシートで存在しないものを作成
