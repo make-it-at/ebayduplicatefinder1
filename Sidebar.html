@@ -120,6 +120,10 @@
         }
       }
       
+      .spinning {
+        animation: spin 1s linear infinite;
+      }
+      
       .processing-text {
         color: #4F46E5;
         font-weight: 500;
@@ -1032,7 +1036,7 @@
     <div class="header">
       <h1>eBay出品管理ツール</h1>
       <div class="version">
-                    <span id="version-display">バージョン: <span id="client-version">1.6.2</span></span>
+                    <span id="version-display">バージョン: <span id="client-version"></span></span></span>
         <span id="version-indicator" class="version-match material-icons" style="display:none">check_circle</span>
       </div>
     </div>
@@ -1141,6 +1145,21 @@
               <div id="auto-file-preview" class="file-preview" style="display:none;"></div>
         </div>
         
+            <!-- US絞り込みボタン -->
+            <button id="filter-us-btn" class="action-btn-secondary" disabled onclick="filterUSOnly()" style="margin-bottom:10px; background-color:#6366F1; color:white;">
+              <span class="material-icons">filter_list</span> US出品のみに絞り込み（eBay Mag対応）
+            </button>
+            
+            <!-- インポートのみボタン -->
+            <button id="import-only-btn" class="action-btn-secondary" disabled onclick="importOnlyProcess()" style="margin-bottom:10px; background-color:#10B981; color:white;">
+              <span class="material-icons">upload</span> インポートのみ実行
+            </button>
+            
+            <!-- 手作業インポート後の高速重複検出ボタン -->
+            <button id="fast-detect-btn" class="action-btn-secondary" onclick="startFastDuplicateDetection()" style="margin-bottom:10px; background-color:#F59E0B; color:white;">
+              <span class="material-icons">flash_on</span> 高速重複検出（手作業インポート後）
+            </button>
+            
             <!-- 処理ボタン -->
             <button id="auto-process-btn" class="action-btn" disabled onclick="startAutoProcess()">
               <span class="material-icons">play_arrow</span> 自動処理を開始
@@ -1163,6 +1182,9 @@
             </div>
             <button id="initialize-sheets-btn" onclick="runInitializeSheets(); return false;" class="action-btn-secondary">
               <span class="material-icons">delete_sweep</span> シートを初期化
+            </button>
+            <button id="export-console-log-btn" onclick="exportConsoleLogToCsv(); return false;" class="action-btn-secondary" style="margin-left: 8px;">
+              <span class="material-icons">download</span> コンソールログCSV出力
             </button>
           </div>
         
@@ -1194,11 +1216,142 @@
 
     <script>
       // グローバル変数
-      const CLIENT_VERSION = '1.6.2'; // クライアント側のバージョン
+      const CLIENT_VERSION = '1.6.40'; // クライアント側のバージョン
       let currentTab = 'auto';  // 初期タブを自動処理に変更
       let serverVersion = '';
       let fileContent = null;
       window.autoFileContent = null; // 自動処理用のファイルコンテンツをグローバルに設定
+      
+      // 統一ボタン状態管理システム
+      const ButtonStateManager = {
+        // ボタンの状態を保存するオブジェクト
+        states: {
+          'filter-us-btn': { enabled: false, reason: 'initial' },
+          'import-only-btn': { enabled: false, reason: 'initial' },
+          'auto-process-btn': { enabled: false, reason: 'initial' }
+        },
+        
+        // ボタン状態を設定する統一関数
+        setState: function(buttonId, enabled, reason) {
+          console.log(`[ButtonStateManager] ${buttonId}: ${enabled ? 'enabled' : 'disabled'} (理由: ${reason})`);
+          
+          // 状態を記録
+          this.states[buttonId] = { enabled: enabled, reason: reason };
+          
+          // DOMを更新
+          const button = document.getElementById(buttonId);
+          if (button) {
+            button.disabled = !enabled;
+            console.log(`[ButtonStateManager] ${buttonId} DOM更新完了: disabled=${!enabled}`);
+          } else {
+            console.error(`[ButtonStateManager] ボタンが見つかりません: ${buttonId}`);
+          }
+        },
+        
+        // 現在の状態を取得
+        getState: function(buttonId) {
+          return this.states[buttonId] || { enabled: false, reason: 'unknown' };
+        },
+        
+        // すべてのボタン状態を表示（デバッグ用）
+        logAllStates: function() {
+          console.log('[ButtonStateManager] 全ボタン状態:');
+          for (const [buttonId, state] of Object.entries(this.states)) {
+            const button = document.getElementById(buttonId);
+            const domState = button ? !button.disabled : 'not found';
+            console.log(`  ${buttonId}: 記録=${state.enabled} DOM=${domState} 理由=${state.reason}`);
+          }
+        },
+        
+        // アプリ状態に基づいてボタンを有効化する統一関数
+        updateFromAppState: function(appState) {
+          console.log('[ButtonStateManager] アプリ状態に基づくボタン更新開始');
+          console.log('[ButtonStateManager] アプリ状態:', appState);
+          
+          // US絞り込みボタン
+          if (appState.hasImportSheet && appState.stats && appState.stats.rowCount > 0) {
+            this.setState('filter-us-btn', true, 'インポートデータ存在');
+          } else if (window.autoFileContent) {
+            this.setState('filter-us-btn', true, 'ファイル選択済み');
+          } else {
+            this.setState('filter-us-btn', false, 'データなし');
+          }
+          
+          // インポートのみボタン
+          if (appState.hasImportSheet && appState.stats && appState.stats.rowCount > 0) {
+            this.setState('import-only-btn', false, '既にインポート済み');
+          } else if (window.autoFileContent) {
+            this.setState('import-only-btn', true, 'ファイル選択済み');
+          } else {
+            this.setState('import-only-btn', false, 'ファイル未選択');
+          }
+          
+          // 自動処理ボタン
+          if (window.autoFileContent) {
+            this.setState('auto-process-btn', true, 'ファイル選択済み');
+          } else {
+            this.setState('auto-process-btn', false, 'ファイル未選択');
+          }
+          
+          this.logAllStates();
+        },
+        
+        // ファイル選択時の更新
+        updateFromFileSelection: function() {
+          console.log('[ButtonStateManager] ファイル選択によるボタン更新');
+          this.setState('filter-us-btn', true, 'ファイル選択');
+          this.setState('import-only-btn', true, 'ファイル選択');
+          this.setState('auto-process-btn', true, 'ファイル選択');
+          this.logAllStates();
+        },
+        
+        // 定期的な状態監視を開始
+        startMonitoring: function() {
+          console.log('[ButtonStateManager] 状態監視開始');
+          setInterval(() => {
+            this.checkConsistency();
+          }, 5000); // 5秒ごとにチェック
+        },
+        
+        // 記録されている状態とDOM状態の整合性をチェック
+        checkConsistency: function() {
+          let inconsistencyFound = false;
+          for (const [buttonId, state] of Object.entries(this.states)) {
+            const button = document.getElementById(buttonId);
+            if (button) {
+              const domEnabled = !button.disabled;
+              if (state.enabled !== domEnabled) {
+                console.warn(`[ButtonStateManager] 不整合検出: ${buttonId} 記録=${state.enabled} DOM=${domEnabled}`);
+                inconsistencyFound = true;
+                // DOM状態を記録に合わせて修正
+                button.disabled = !state.enabled;
+                console.log(`[ButtonStateManager] ${buttonId} DOM状態を修正しました`);
+              }
+            }
+          }
+          if (inconsistencyFound) {
+            this.logAllStates();
+          }
+        },
+        
+        // 強制的にボタンを有効化（緊急時用）
+        forceEnable: function(buttonId, reason) {
+          console.log(`[ButtonStateManager] 強制有効化: ${buttonId} (理由: ${reason})`);
+          this.setState(buttonId, true, `強制有効化: ${reason}`);
+        }
+      };
+      
+      // グローバルスコープに公開（デバッグ用）
+      window.ButtonStateManager = ButtonStateManager;
+      
+      // 後方互換性のための関数（既存コードで使用されている）
+      function setFilterButtonState(enabled, reason) {
+        ButtonStateManager.setState('filter-us-btn', enabled, reason);
+      }
+      
+      function setImportOnlyButtonState(enabled, reason) {
+        ButtonStateManager.setState('import-only-btn', enabled, reason);
+      }
       
       /**
        * シート初期化関数 - シンプル版
@@ -1298,6 +1451,22 @@
       // ページ読み込み完了時の処理
       document.addEventListener('DOMContentLoaded', function() {
         console.log('DOM読み込み完了');
+
+        // バージョン表示を初期化（更新時刻付き）
+        const clientVersionElement = document.getElementById('client-version');
+        if (clientVersionElement) {
+          const updateTime = new Date().toLocaleTimeString('ja-JP', {hour: '2-digit', minute: '2-digit'});
+          clientVersionElement.textContent = `${CLIENT_VERSION} (${updateTime})`;
+          console.log(`バージョン表示更新: ${CLIENT_VERSION} (${updateTime})`);
+        } else {
+          console.error('client-version要素が見つかりません');
+        }
+
+        // ButtonStateManagerを使用して初期状態をログ出力
+        console.log('初期化時のボタン状態チェック');
+        setTimeout(function() {
+          ButtonStateManager.logAllStates();
+        }, 100);
         
         // サーバーからのバージョン取得
         getServerVersion();
@@ -1305,17 +1474,25 @@
         // 各種ハンドラを設定
         console.log('各種ハンドラの設定を開始します');
         try {
-          setupTabHandlers();
-          console.log('タブハンドラの設定が完了しました');
+          // setupTabHandlers(); // 未使用のため削除
           
-          setupFileUploadHandlers();
-          console.log('ファイルアップロードハンドラの設定が完了しました');
+          // setupFileUploadHandlers(); // 未使用のため削除
           
           setupButtonHandlers();
           console.log('ボタンハンドラの設定が完了しました');
           
           setupAutoProcessHandlers(); // 自動処理ハンドラの設定
           console.log('自動処理ハンドラの設定が完了しました');
+          
+          // ButtonStateManagerの監視を開始
+          ButtonStateManager.startMonitoring();
+          
+          // 初期化完了後、アプリ状態をチェック
+          setTimeout(function() {
+            console.log('初期化完了後のアプリ状態チェックを実行');
+            checkAppState();
+          }, 1000);
+          
         } catch (e) {
           console.error('ハンドラ設定中にエラーが発生しました:', e);
         }
@@ -1354,9 +1531,15 @@
           }
           
           // メッセージタイプに応じたスタイルを設定
-          messageElement.className = `message ${type}`;
-          messageElement.textContent = message;
-          messageElement.style.display = 'block';
+          if (message.trim() === '') {
+            // 空メッセージの場合は非表示
+            messageElement.style.display = 'none';
+            messageElement.textContent = '';
+          } else {
+            messageElement.className = `message ${type}`;
+            messageElement.textContent = message;
+            messageElement.style.display = 'block';
+          }
           
           // 一番上までスクロール
           window.scrollTo(0, 0);
@@ -1401,8 +1584,12 @@
         const versionDisplay = document.getElementById('version-display');
         const versionIndicator = document.getElementById('version-indicator');
         
-        if (!versionDisplay || !versionIndicator) {
-          console.error('バージョン表示要素が見つかりません');
+        if (!versionDisplay) {
+          console.error('バージョン表示要素が見つかりません: version-display');
+          return;
+        }
+        if (!versionIndicator) {
+          console.error('バージョン表示要素が見つかりません: version-indicator');
           return;
         }
         
@@ -1617,9 +1804,13 @@
         
         const reader = new FileReader();
         reader.onload = function(e) {
+          console.log('FileReader-1 onload実行開始');
           fileContent = e.target.result;
           showMessage('CSVファイルを読み込みました', 'success');
           document.getElementById('auto-process-btn').disabled = false;
+          // 新しいButtonStateManagerを使用
+          ButtonStateManager.updateFromFileSelection();
+          console.log('FileReader-1 onload実行完了');
         };
         reader.onerror = function() {
           showMessage('ファイル読み込みエラー', 'error');
@@ -1670,10 +1861,332 @@
       }
       
       /**
-       * 自動処理開始
+       * 自動処理開始（分割処理対応）
        */
+      // US絞り込み処理
+      function filterUSOnly() {
+        console.log('filterUSOnly関数が呼び出されました');
+        console.log('US絞り込み処理開始');
+        
+        // インポートデータの存在確認を先に行う
+        try {
+          google.script.run
+            .withSuccessHandler(function(state) {
+              console.log('アプリ状態確認結果:', state);
+              
+              // インポートデータが存在するかチェック
+              if (!state.hasImportSheet || !state.stats.rowCount) {
+                if (!window.autoFileContent) {
+                  showUnifiedMessage('CSVファイルを選択するか、先にインポートを実行してください', 'error');
+                  return;
+                }
+                // ファイルが選択されている場合は、インポートから実行
+                executeUSFilterWithImport();
+              } else {
+                // インポート済みデータに対してUS絞り込みを実行
+                executeUSFilterOnExistingData();
+              }
+            })
+            .withFailureHandler(function(error) {
+              console.error('状態確認エラー:', error);
+              // フォールバック：ファイルが選択されているかチェック
+              if (!window.autoFileContent) {
+                showUnifiedMessage('CSVファイルを選択するか、先にインポートを実行してください', 'error');
+                return;
+              }
+              executeUSFilterWithImport();
+            })
+            .checkAppState();
+        } catch (e) {
+          console.error('状態確認中に例外発生:', e);
+          if (!window.autoFileContent) {
+            showUnifiedMessage('CSVファイルを選択するか、先にインポートを実行してください', 'error');
+            return;
+          }
+          executeUSFilterWithImport();
+        }
+      }
+      
+      // インポート済みデータに対してUS絞り込みを実行
+      function executeUSFilterOnExistingData() {
+        console.log('インポート済みデータに対してUS絞り込みを実行');
+        
+        // ボタンを無効化
+        const processBtn = document.getElementById('auto-process-btn');
+        const importOnlyBtn = document.getElementById('import-only-btn');
+        setFilterButtonState(false, 'US絞り込み処理開始（既存データ）');
+        if (processBtn) processBtn.disabled = true;
+        if (importOnlyBtn) importOnlyBtn.disabled = true;
+        
+        showUnifiedMessage('既存データをUS出品のみに絞り込み中...', 'info');
+        
+        try {
+          google.script.run
+            .withSuccessHandler(function(result) {
+              console.log('US絞り込み処理完了（既存データ）:', result);
+              
+              // ボタンを再有効化
+              setFilterButtonState(true, 'US絞り込み処理完了（既存データ）');
+              if (processBtn) processBtn.disabled = false;
+              if (importOnlyBtn) importOnlyBtn.disabled = false;
+              
+              if (result.success) {
+                showUnifiedMessage(`US絞り込み完了: ${result.message}`, 'success');
+                // アプリ状態更新でUI状態を正しく設定
+                checkAppState();
+              } else {
+                showUnifiedMessage('US絞り込み失敗: ' + result.message, 'error');
+              }
+            })
+            .withFailureHandler(function(error) {
+              console.error('US絞り込みエラー（既存データ）:', error);
+              showUnifiedMessage('US絞り込み中にエラーが発生しました: ' + error.message, 'error');
+              // ボタンを再有効化
+              setFilterButtonState(true, 'US絞り込みエラー後の復旧（既存データ）');
+              if (processBtn) processBtn.disabled = false;
+              if (importOnlyBtn) importOnlyBtn.disabled = false;
+            })
+            .filterUSOnly();
+        } catch (e) {
+          console.error('US絞り込み処理中に例外発生（既存データ）:', e);
+          showUnifiedMessage('US絞り込み処理中にエラーが発生しました: ' + e.message, 'error');
+          setFilterButtonState(true, 'US絞り込み例外後の復旧（既存データ）');
+          if (processBtn) processBtn.disabled = false;
+          if (importOnlyBtn) importOnlyBtn.disabled = false;
+        }
+      }
+      
+      // ファイルからインポートしてUS絞り込みを実行（未実装のため既存関数を使用）
+      function executeUSFilterWithImport() {
+        console.log('ファイルからインポートしてUS絞り込みを実行（既存関数使用）');
+        
+        // まずインポートを実行
+        importOnlyProcess();
+      }
+      
+      // インポートのみ処理関数
+      function importOnlyProcess() {
+        console.log('インポートのみ処理開始');
+        
+        // ファイルが選択されているかチェック
+        if (!window.autoFileContent) {
+          showUnifiedMessage('CSVファイルを選択してください', 'error');
+          return;
+        }
+        
+        // ボタンを無効化
+        const importOnlyBtn = document.getElementById('import-only-btn');
+        const autoProcessBtn = document.getElementById('auto-process-btn');
+        setFilterButtonState(false, 'インポート処理開始');
+        if (importOnlyBtn) importOnlyBtn.disabled = true;
+        if (autoProcessBtn) autoProcessBtn.disabled = true;
+        
+        showUnifiedMessage('CSVデータをインポート中...', 'info');
+        
+        try {
+          google.script.run
+            .withSuccessHandler(function(result) {
+              console.log('インポートのみ処理完了:', result);
+              
+              // ボタンを再有効化
+              if (importOnlyBtn) importOnlyBtn.disabled = false;
+              if (autoProcessBtn) autoProcessBtn.disabled = false;
+              setFilterButtonState(true, 'インポートのみ処理完了');
+              
+              if (result.success) {
+                showUnifiedMessage(`インポート完了: ${result.message}`, 'success');
+                // アプリ状態更新でUI状態を正しく設定
+                checkAppState();
+
+                // 3秒後にメッセージをクリア
+                setTimeout(() => {
+                  showUnifiedMessage('', 'info');
+                }, 3000);
+              } else {
+                showUnifiedMessage('インポート失敗: ' + result.message, 'error');
+              }
+            })
+            .withFailureHandler(function(error) {
+              console.error('インポートのみ処理エラー:', error);
+
+              // タイムアウトエラーの場合は段階的確認（カスケード方式）
+              if (error.message && error.message.includes('タイムアウト')) {
+                console.log('⚠️  タイムアウト検出 - 段階的処理完了状況を確認中...');
+                showUnifiedMessage('処理にタイムアウトが発生しましたが、段階的にデータ確認中です...', 'warning');
+
+                // 第1段階: 軽量確認（2秒後）
+                setTimeout(function() {
+                  console.log('🔄 第1段階: 軽量確認開始');
+                  google.script.run
+                    .withSuccessHandler(function(checkResult) {
+                      console.log('✅ 軽量確認成功:', checkResult);
+                      if (checkResult && checkResult.hasData) {
+                        showUnifiedMessage('✅ インポートが完了しました！（' + checkResult.rowCount + '行）', 'success');
+                        setFilterButtonState(true, '軽量確認でインポート成功');
+                      } else {
+                        showUnifiedMessage('❌ インポートに失敗しました（軽量確認）', 'error');
+                        setFilterButtonState(false, '軽量確認でインポート失敗');
+                      }
+
+                      // ボタンを再有効化
+                      if (importOnlyBtn) importOnlyBtn.disabled = false;
+                      if (autoProcessBtn) autoProcessBtn.disabled = false;
+                    })
+                    .withFailureHandler(function(lightError) {
+                      console.error('⚠️ 軽量確認もタイムアウト、超軽量確認に切り替え:', lightError);
+
+                      // 第2段階: 超軽量確認（1秒後）
+                      setTimeout(function() {
+                        console.log('🔄 第2段階: 超軽量確認開始');
+                        google.script.run
+                          .withSuccessHandler(function(ultraResult) {
+                            console.log('✅ 超軽量確認成功:', ultraResult);
+                            if (ultraResult && ultraResult.hasData) {
+                              showUnifiedMessage('✅ インポート確認完了！（' + ultraResult.rowCount + '行・超軽量確認）', 'success');
+                              setFilterButtonState(true, '超軽量確認でインポート成功');
+                            } else {
+                              showUnifiedMessage('❌ インポートに失敗しました（超軽量確認）', 'error');
+                              setFilterButtonState(false, '超軽量確認でインポート失敗');
+                            }
+
+                            // ボタンを再有効化
+                            if (importOnlyBtn) importOnlyBtn.disabled = false;
+                            if (autoProcessBtn) autoProcessBtn.disabled = false;
+                          })
+                          .withFailureHandler(function(ultraError) {
+                            console.error('❌ 超軽量確認も失敗:', ultraError);
+                            showUnifiedMessage('❌ 全ての確認方法が失敗しました。手動でシートを確認してください。', 'error');
+
+                            // ボタンを再有効化
+                            if (importOnlyBtn) importOnlyBtn.disabled = false;
+                            if (autoProcessBtn) autoProcessBtn.disabled = false;
+                            setFilterButtonState(false, '全確認失敗');
+                          })
+                          .checkImportStatusUltraLight();
+                      }, 1000);
+                    })
+                    .checkImportStatus();
+                }, 2000);
+              } else {
+                // 一般的なエラー
+                showUnifiedMessage('インポート中にエラーが発生しました: ' + error.message, 'error');
+
+                // ボタンを再有効化
+                if (importOnlyBtn) importOnlyBtn.disabled = false;
+                if (autoProcessBtn) autoProcessBtn.disabled = false;
+                setFilterButtonState(true, 'インポートのみエラー後の復旧');
+              }
+            })
+            .importCsvData(window.autoFileContent);
+        } catch (e) {
+          console.error('インポートのみ処理中に例外発生:', e);
+          showUnifiedMessage('インポート処理中にエラーが発生しました: ' + e.message, 'error');
+          
+          // ボタンを再有効化
+          if (importOnlyBtn) importOnlyBtn.disabled = false;
+          if (autoProcessBtn) autoProcessBtn.disabled = false;
+          setFilterButtonState(true, 'インポートのみ例外後の復旧');
+        }
+      }
+      
+      /**
+       * 手作業インポート後の高速重複検出
+       */
+      function startFastDuplicateDetection() {
+        console.log('*** UI DEBUG: startFastDuplicateDetection called ***');
+        
+        const fastDetectBtn = document.getElementById('fast-detect-btn');
+        const progressStatus = document.getElementById('auto-progress-status');
+        const progressMessage = document.getElementById('auto-progress-message');
+        const resultMessage = document.getElementById('auto-result-message');
+        
+        try {
+          // ボタンを無効化
+          if (fastDetectBtn) {
+            fastDetectBtn.disabled = true;
+            fastDetectBtn.innerHTML = '<span class="material-icons spinning">refresh</span> 高速検出実行中...';
+          }
+          
+          // 進捗表示
+          if (progressStatus) {
+            progressStatus.style.display = 'flex';
+          }
+          if (progressMessage) {
+            progressMessage.textContent = 'インポートシートから重複検出を開始中...';
+          }
+          
+          showUnifiedMessage('手作業インポートデータから高速重複検出を開始します...', 'info');
+          
+          // 結果エリアをクリア
+          if (resultMessage) {
+            resultMessage.style.display = 'none';
+          }
+          
+          console.log('*** UI DEBUG: Calling fast duplicate detection on server ***');
+          
+          // サーバー側の高速重複検出を呼び出し
+          google.script.run
+            .withSuccessHandler(function(result) {
+              console.log('高速重複検出結果:', result);
+              
+              if (result.success) {
+                handleProcessComplete(result);
+                showUnifiedMessage('高速重複検出が完了しました！', 'success');
+              } else {
+                handleProcessError(result);
+              }
+            })
+            .withFailureHandler(function(error) {
+              console.error('高速重複検出エラー:', error);
+              
+              // エラーメッセージを表示
+              showUnifiedMessage('高速重複検出中にエラーが発生しました: ' + error.message, 'error');
+              
+              // エラーメッセージを結果エリアに表示
+              if (resultMessage) {
+                resultMessage.innerHTML = `
+                  <div class="error-icon">⚠</div>
+                  <div class="error-message">
+                    <h3>高速重複検出中にエラーが発生しました</h3>
+                    <p>${error.message || '不明なエラーが発生しました'}</p>
+                    <p>インポートシートに有効なデータがあることを確認してください。</p>
+                  </div>
+                `;
+                resultMessage.className = 'result-message error';
+                resultMessage.style.display = 'flex';
+              }
+              
+              // ボタンを復元
+              if (fastDetectBtn) {
+                fastDetectBtn.disabled = false;
+                fastDetectBtn.innerHTML = '<span class="material-icons">flash_on</span> 高速重複検出（手作業インポート後）';
+              }
+              if (progressStatus) {
+                progressStatus.style.display = 'none';
+              }
+            })
+            .executeFastDuplicateDetection();
+          
+        } catch (error) {
+          console.error('*** UI DEBUG: Fast duplicate detection error:', error);
+          showUnifiedMessage('高速重複検出の開始に失敗しました: ' + error.message, 'error');
+          
+          // ボタンを復元
+          if (fastDetectBtn) {
+            fastDetectBtn.disabled = false;
+            fastDetectBtn.innerHTML = '<span class="material-icons">flash_on</span> 高速重複検出（手作業インポート後）';
+          }
+          if (progressStatus) {
+            progressStatus.style.display = 'none';
+          }
+        }
+      }
+      
       function startAutoProcess() {
-        console.log('自動処理開始関数が呼び出されました');
+        console.log('*** UI DEBUG: startAutoProcess called ***');
+        console.log('分割処理による自動処理開始');
+        console.log('window.autoFileContent exists:', !!window.autoFileContent);
+        console.log('window.autoFileContent length:', window.autoFileContent ? window.autoFileContent.length : 'null');
         if (!window.autoFileContent) {
           showUnifiedMessage('CSVファイルを選択してください', 'error');
           return;
@@ -1690,108 +2203,242 @@
         if (resultMessage) resultMessage.style.display = 'none';
         
         // メッセージをクリア
-        showUnifiedMessage('処理を開始します...', 'info');
+        showUnifiedMessage('分割処理を開始します（タイムアウト対策有効）...', 'info');
         
         // UI更新
         if (processBtn) processBtn.disabled = true;
-        if (cancelBtn) cancelBtn.style.display = 'block'; // キャンセルボタン表示
+        if (cancelBtn) cancelBtn.style.display = 'block';
         if (progressStatus) {
           progressStatus.style.display = 'flex';
-          progressMessage.textContent = 'CSVデータを解析中...';
+          progressMessage.textContent = 'フェーズ1/4: CSVデータを解析中...';
         }
         
         // 処理をキャンセル可能として記録
         window.isProcessing = true;
+        window.currentProcessId = null;
         
-        console.log('サーバーサイド処理を呼び出します');
+        console.log('分割処理による自動処理開始');
+        console.log('*** UI DEBUG: Starting client-side CSV chunking approach ***');
+        console.log('*** UI DEBUG: Data size:', window.autoFileContent.length);
         
-        // 処理進捗更新関数
-        function updateProgress(step, progress) {
-          if (progressMessage && progressStatus) {
-            progressStatus.style.display = 'flex';
-            progressMessage.textContent = progress;
-            console.log(`進捗更新: ${step} - ${progress}`);
+        // クライアント側でCSVを小さなチャンクに分割してサーバーに送信
+        startClientSideChunkedUpload();
+      }
+      
+      /**
+       * クライアント側でCSVをチャンクに分割してアップロード
+       */
+      function startClientSideChunkedUpload() {
+        const processBtn = document.getElementById('auto-process-btn');
+        const cancelBtn = document.getElementById('auto-cancel-btn');
+        const progressStatus = document.getElementById('auto-progress-status');
+        const progressMessage = document.getElementById('auto-progress-message');
+        const resultMessage = document.getElementById('auto-result-message');
+        
+        try {
+          console.log('*** UI DEBUG: Starting CSV line split ***');
+          
+          // CSVを行に分割
+          const lines = window.autoFileContent.split('\n');
+          console.log(`*** UI DEBUG: Split into ${lines.length} lines ***`);
+          
+          // チャンクサイズ（行数）
+          const LINES_PER_CHUNK = 1000;
+          const totalChunks = Math.ceil(lines.length / LINES_PER_CHUNK);
+          let currentChunk = 0;
+          let retryCount = 0;
+          const MAX_RETRIES = 3;
+          
+          console.log(`*** UI DEBUG: Will create ${totalChunks} chunks ***`);
+          
+          // 最初にインポートシートを初期化
+          google.script.run
+            .withSuccessHandler(function(result) {
+              if (result.success) {
+                console.log('*** UI DEBUG: Import sheet initialized, starting chunk upload ***');
+                uploadNextChunk();
+              } else {
+                handleProcessError(result);
+              }
+            })
+            .withFailureHandler(function(error) {
+              console.error('インポートシート初期化エラー:', error);
+              handleProcessError({ success: false, message: error.message });
+            })
+            .initializeImportSheet();
+          
+          function retryCurrentChunk() {
+            retryCount++;
+            if (retryCount <= MAX_RETRIES) {
+              console.log(`*** UI DEBUG: Retrying chunk ${currentChunk + 1} (attempt ${retryCount}/${MAX_RETRIES}) ***`);
+              
+              // 進捗表示を更新
+              if (progressMessage) {
+                const progress = Math.round((currentChunk / totalChunks) * 100);
+                progressMessage.textContent = `CSVアップロード中: ${progress}% (リトライ ${retryCount}/${MAX_RETRIES}) チャンク ${currentChunk + 1}/${totalChunks}`;
+              }
+              
+              // 長めの待機時間でリトライ
+              setTimeout(function() {
+                uploadChunk(currentChunk);
+              }, 3000);
+            } else {
+              console.error(`*** UI DEBUG: Chunk ${currentChunk + 1} failed after ${MAX_RETRIES} retries ***`);
+              handleProcessError({ 
+                success: false, 
+                message: `チャンク ${currentChunk + 1}/${totalChunks} のアップロードに ${MAX_RETRIES}回失敗しました`
+              });
+            }
           }
-        }
-        
-        // サーバーサイド処理を呼び出し
-        window.currentProcessRequest = google.script.run
-          .withSuccessHandler(function(result) {
-            console.log('自動処理結果を受信:', result);
+          
+          function uploadChunk(chunkIndex) {
+            const startLine = chunkIndex * LINES_PER_CHUNK;
+            const endLine = Math.min(startLine + LINES_PER_CHUNK, lines.length);
+            const chunkLines = lines.slice(startLine, endLine);
+            const chunkCsv = chunkLines.join('\n');
             
-            // 処理フラグをリセット
-            window.isProcessing = false;
+            console.log(`*** UI DEBUG: Uploading chunk ${chunkIndex + 1}/${totalChunks} (lines ${startLine}-${endLine}) ***`);
             
-            // UI状態を更新
-            if (processBtn) processBtn.disabled = false;
-            if (cancelBtn) cancelBtn.style.display = 'none'; // キャンセルボタン非表示
-            if (progressStatus) {
-              progressStatus.style.display = 'none';
+            // 進捗表示を更新
+            if (progressMessage) {
+              const progress = Math.round((chunkIndex / totalChunks) * 100);
+              progressMessage.textContent = `CSVアップロード中: ${progress}% (${chunkIndex + 1}/${totalChunks}チャンク)`;
             }
             
+            // チャンクをサーバーに送信
+            google.script.run
+              .withSuccessHandler(function(result) {
+                if (result.success) {
+                  console.log(`*** UI DEBUG: Chunk ${chunkIndex + 1} uploaded successfully ***`);
+                  currentChunk++;
+                  retryCount = 0; // 成功したらリトライカウントをリセット
+                  // 次のチャンクをゆっくりアップロード（Google Sheetsサービスタイムアウト対策）
+                  setTimeout(uploadNextChunk, 1000);
+                } else {
+                  console.error(`*** UI DEBUG: Chunk ${chunkIndex + 1} upload failed:`, result.message);
+                  retryCurrentChunk();
+                }
+              })
+              .withFailureHandler(function(error) {
+                console.error(`チャンク ${chunkIndex + 1} アップロードエラー:`, error);
+                retryCurrentChunk();
+              })
+              .appendCsvChunkToImportSheet(chunkCsv, chunkIndex, totalChunks);
+          }
+          
+          function uploadNextChunk() {
+            if (currentChunk >= totalChunks) {
+              // すべてのチャンクがアップロード完了
+              console.log('*** UI DEBUG: All chunks uploaded, starting duplicate detection ***');
+              startDuplicateDetectionAfterUpload();
+              return;
+            }
+            
+            uploadChunk(currentChunk);
+          }
+          
+        } catch (error) {
+          console.error('*** UI DEBUG: Client-side chunking error:', error);
+          handleProcessError({ success: false, message: error.message });
+        }
+      }
+      
+      /**
+       * チャンクアップロード完了後に重複検出を開始
+       */
+      function startDuplicateDetectionAfterUpload() {
+        const progressMessage = document.getElementById('auto-progress-message');
+        
+        if (progressMessage) {
+          progressMessage.textContent = '重複検出を開始中...';
+        }
+        
+        console.log('*** UI DEBUG: Starting duplicate detection after chunk upload ***');
+        
+        google.script.run
+          .withSuccessHandler(function(result) {
+            console.log('重複検出結果:', result);
+            
             if (result.success) {
-              // 処理成功
-              if (progressStatus) {
-                progressStatus.style.display = 'none';
-              }
-              
-              // 統一メッセージエリアに結果を表示
-              showUnifiedMessage(result.finalMessage, 'success');
-              
-              // 明確な結果メッセージを表示（目立つように）
-              if (resultMessage) {
-                resultMessage.innerHTML = `
-                  <div class="completion-icon">✓</div>
-                  <div class="completion-message">
-                    <h3>処理が完了しました</h3>
-                    <p>${result.stats.importedRows || 0}件のデータから${result.stats.duplicateGroups || 0}件の重複グループを検出</p>
-                    <p>${result.stats.exportCount || 0}件のアイテムをエクスポート（処理時間: ${result.processingTime.toFixed(1)}秒）</p>
-                  </div>
-                `;
-                resultMessage.style.display = 'flex';
-              }
-              
-              // CSVダウンロード処理（エクスポートデータがある場合）
-              if (result.data && result.fileName) {
-                // 少し遅延を入れてからダウンロード処理を開始（UIの更新を先に完了させるため）
-                setTimeout(function() {
-                  console.log('エクスポートデータが存在するため、自動的にダウンロードを開始します');
-                  downloadAutoProcessedCSV(result.data, result.fileName, true);
-                }, 500);
-              }
+              handleProcessComplete(result);
             } else {
-              // エラー
-              if (progressStatus) {
-                progressStatus.style.display = 'none';
-              }
-              
-              // エラーメッセージを表示
-              showUnifiedMessage(result.finalMessage || result.error?.message || '不明なエラーが発生しました', 'error');
-              
-              // エラーメッセージを結果エリアに表示
-              if (resultMessage) {
-                resultMessage.innerHTML = `
-                  <div class="error-icon">⚠</div>
-                  <div class="error-message">
-                    <h3>処理中にエラーが発生しました</h3>
-                    <p>${result.finalMessage || result.error?.message || '不明なエラーが発生しました'}</p>
-                    <p>別のCSVファイルを選択するか、シートを初期化してから再試行してください。</p>
-                  </div>
-                `;
-                resultMessage.className = 'result-message error';
-                resultMessage.style.display = 'flex';
-              }
+              handleProcessError(result);
             }
           })
           .withFailureHandler(function(error) {
-            console.error('自動処理エラー:', error);
+            console.error('重複検出エラー:', error);
+            handleProcessError({ success: false, message: error.message });
+          })
+          .startDuplicateDetectionFromImportSheet();
+      }
+
+      /**
+       * CSV保存後に分割処理を開始
+       */
+      function startChunkedProcessAfterCsvSave() {
+        const processBtn = document.getElementById('auto-process-btn');
+        const cancelBtn = document.getElementById('auto-cancel-btn');
+        const progressStatus = document.getElementById('auto-progress-status');
+        const progressMessage = document.getElementById('auto-progress-message');
+        const resultMessage = document.getElementById('auto-result-message');
+        
+        console.log('*** UI DEBUG: Starting chunked process without large data parameter ***');
+        
+        // 分割処理を開始（データパラメータなし）
+        window.currentProcessRequest = google.script.run
+          .withSuccessHandler(function(result) {
+            console.log('分割処理開始結果:', result);
+            
+            if (result.success && result.processId) {
+              // プロセスIDを保存
+              window.currentProcessId = result.processId;
+              
+              if (result.completed) {
+                // 即座に完了した場合
+                handleProcessComplete(result);
+              } else if (result.paused) {
+                // 処理が一時停止した場合
+                if (progressMessage) {
+                  progressMessage.textContent = `${result.message}（進捗: ${result.progress}%）`;
+                }
+                showUnifiedMessage('処理を一時停止しました。しばらくお待ちください...', 'info');
+                
+                // 1秒後に自動で続行（高速化）
+                setTimeout(function() {
+                  continueChunkedProcess(result.processId);
+                }, 1000);
+              } else {
+                // 処理継続中
+                if (progressMessage) {
+                  const phaseNames = {
+                    'import': 'インポート',
+                    'detect': '重複検出', 
+                    'analyze': '分析',
+                    'export': 'エクスポート'
+                  };
+                  const phaseName = phaseNames[result.phase] || result.phase;
+                  progressMessage.textContent = `フェーズ${result.progress || 0}%: ${phaseName}処理中...`;
+                }
+                
+                // 1秒後に続行（高速化）
+                setTimeout(function() {
+                  continueChunkedProcess(result.processId);
+                }, 1000);
+              }
+            } else {
+              // エラー
+              handleProcessError(result);
+            }
+          })
+          .withFailureHandler(function(error) {
+            console.error('分割処理エラー:', error);
             
             // 処理フラグをリセット
             window.isProcessing = false;
             
             // UI状態を更新
             if (processBtn) processBtn.disabled = false;
-            if (cancelBtn) cancelBtn.style.display = 'none'; // キャンセルボタン非表示
+            if (cancelBtn) cancelBtn.style.display = 'none';
             if (progressStatus) {
               progressStatus.style.display = 'none';
             }
@@ -1828,28 +2475,175 @@
               }
             }
           })
-          .autoProcessEbayData(window.autoFileContent);
+          .startChunkedAutoProcessFromStorage();
+      }
+      
+      /**
+       * 分割処理の続行
+       */
+      function continueChunkedProcess(processId) {
+        if (!processId) return;
+        
+        console.log(`分割処理続行: ${processId}`);
+        const progressMessage = document.getElementById('auto-progress-message');
+        
+        google.script.run
+          .withSuccessHandler(function(result) {
+            console.log('分割処理続行結果:', result);
+            
+            if (result.success && result.processId) {
+              if (result.completed) {
+                // 処理完了
+                handleProcessComplete(result);
+              } else if (result.paused) {
+                // 再度一時停止
+                if (progressMessage) {
+                  progressMessage.textContent = `${result.message}（進捗: ${result.progress}%）`;
+                }
+                showUnifiedMessage('処理を一時停止しました。継続中...', 'info');
+                
+                // 1秒後に再続行（高速化）
+                setTimeout(function() {
+                  continueChunkedProcess(result.processId);
+                }, 1000);
+              } else {
+                // 処理継続中
+                if (progressMessage) {
+                  const phaseNames = {
+                    'import': 'インポート',
+                    'detect': '重複検出', 
+                    'analyze': '分析',
+                    'export': 'エクスポート'
+                  };
+                  const phaseName = phaseNames[result.phase] || result.phase;
+                  progressMessage.textContent = `フェーズ${result.progress || 0}%: ${phaseName}処理中...`;
+                }
+                
+                // 1秒後に続行（高速化）
+                setTimeout(function() {
+                  continueChunkedProcess(result.processId);
+                }, 1000);
+              }
+            } else {
+              // エラー
+              handleProcessError(result);
+            }
+          })
+          .withFailureHandler(function(error) {
+            console.error('分割処理続行エラー:', error);
+            handleProcessError({
+              success: false,
+              message: `処理続行エラー: ${error.message}`
+            });
+          })
+          .continueChunkedProcess(processId);
+      }
+      
+      /**
+       * 処理完了ハンドラー
+       */
+      function handleProcessComplete(result) {
+        console.log('処理完了:', result);
+        
+        // 重複実行防止チェック
+        if (window.downloadInitiated) {
+          console.log('ダウンロードが既に開始されているため、重複実行を防止します');
+          return;
+        }
+        
+        // 処理フラグをリセット
+        window.isProcessing = false;
+        window.currentProcessId = null;
+        
+        // UI要素を取得
+        const processBtn = document.getElementById('auto-process-btn');
+        const cancelBtn = document.getElementById('auto-cancel-btn');
+        const progressStatus = document.getElementById('auto-progress-status');
+        const resultMessage = document.getElementById('auto-result-message');
+        
+        // UI状態を更新
+        if (processBtn) processBtn.disabled = false;
+        if (cancelBtn) cancelBtn.style.display = 'none';
+        if (progressStatus) progressStatus.style.display = 'none';
+        
+        // 成功メッセージを表示
+        const finalMessage = result.result?.finalMessage || result.message || '全ての処理が正常に完了しました';
+        showUnifiedMessage('処理が完了しました。CSVファイルを自動ダウンロード中...', 'success');
+        
+        // 3秒後に自動でCSVをダウンロード
+        setTimeout(function() {
+          console.log('自動ダウンロード開始');
+          window.downloadInitiated = true; // ダウンロード開始フラグを設定
+          downloadExportCsv();
+        }, 3000);
+        
+        // 結果詳細を表示
+        if (resultMessage && result.result) {
+          const steps = result.result.steps || [];
+          const importStep = steps.find(s => s.name === 'import');
+          const detectStep = steps.find(s => s.name === 'detect');
+          const exportStep = steps.find(s => s.name === 'export');
           
-        // 段階的に進捗状況を更新
-        setTimeout(function() {
-          updateProgress('import', 'CSVデータを解析中...');
-        }, 500);
+          resultMessage.innerHTML = `
+            <div class="completion-icon">✓</div>
+            <div class="completion-message">
+              <h3>分割処理が完了しました</h3>
+              <p>インポート: ${importStep?.progressDetail || '完了'}</p>
+              <p>重複検出: ${detectStep?.progressDetail || '完了'}</p>
+              <p>エクスポート: ${exportStep?.progressDetail || '完了'}</p>
+              <p><strong>タイムアウト対策により安全に処理完了</strong></p>
+            </div>
+          `;
+          resultMessage.style.display = 'flex';
+        }
         
-        setTimeout(function() {
-          if (window.isProcessing) updateProgress('import', 'データをインポート中...');
-        }, 2000);
+        // CSVダウンロード処理
+        if (result.result?.data && result.result?.fileName) {
+          setTimeout(function() {
+            console.log('エクスポートデータをダウンロード開始');
+            downloadAutoProcessedCSV(result.result.data, result.result.fileName, true);
+          }, 500);
+        }
+      }
+      
+      /**
+       * 処理エラーハンドラー
+       */
+      function handleProcessError(result) {
+        console.error('処理エラー:', result);
         
-        setTimeout(function() {
-          if (window.isProcessing) updateProgress('detect', '重複データを検索中...');
-        }, 5000);
+        // 処理フラグをリセット
+        window.isProcessing = false;
+        window.currentProcessId = null;
         
-        setTimeout(function() {
-          if (window.isProcessing) updateProgress('analyze', '重複パターンを分析中...');
-        }, 10000);
+        // UI要素を取得
+        const processBtn = document.getElementById('auto-process-btn');
+        const cancelBtn = document.getElementById('auto-cancel-btn');
+        const progressStatus = document.getElementById('auto-progress-status');
+        const resultMessage = document.getElementById('auto-result-message');
         
-        setTimeout(function() {
-          if (window.isProcessing) updateProgress('export', 'CSVエクスポートを準備中...');
-        }, 15000);
+        // UI状態を更新
+        if (processBtn) processBtn.disabled = false;
+        if (cancelBtn) cancelBtn.style.display = 'none';
+        if (progressStatus) progressStatus.style.display = 'none';
+        
+        // エラーメッセージを表示
+        const errorMessage = result.message || result.finalMessage || '不明なエラーが発生しました';
+        showUnifiedMessage(errorMessage, 'error');
+        
+        // エラー詳細を表示
+        if (resultMessage) {
+          resultMessage.innerHTML = `
+            <div class="error-icon">⚠</div>
+            <div class="error-message">
+              <h3>処理中にエラーが発生しました</h3>
+              <p>${errorMessage}</p>
+              <p>時間をおいてから再試行してください。</p>
+            </div>
+          `;
+          resultMessage.className = 'result-message error';
+          resultMessage.style.display = 'flex';
+        }
       }
       
       /**
@@ -1929,10 +2723,21 @@
         const downloadBtn = document.getElementById('download-btn');
         const analysisBtn = document.getElementById('analysis-btn');
         
+        // DOM要素の存在確認
+        if (!step1 || !step2 || !step3) {
+          console.log('updateUIState: step要素が見つかりません - 自動処理タブでは無視');
+          // 新しいButtonStateManagerを使用してボタン状態のみを更新
+          ButtonStateManager.updateFromAppState(state);
+          return;
+        }
+
         // すべて初期状態に戻す
         step1.className = 'step';
         step2.className = 'step';
         step3.className = 'step';
+        
+        // 新しいButtonStateManagerを使用してボタン状態を更新
+        ButtonStateManager.updateFromAppState(state);
         
         // インポートデータが存在する場合
         if (state.hasImportSheet) {
@@ -2218,6 +3023,7 @@
             
             reader.onload = function(event) {
               try {
+                console.log('FileReader-2 onload実行開始');
                 if (!event || !event.target) {
                   throw new Error('読み込みイベントが無効です');
                 }
@@ -2618,6 +3424,8 @@
                   if (downloadBtn) downloadBtn.disabled = false;
                   // 完了メッセージを緑色で表示
                   showMessage('export-message', 'ダウンロードが完了しました', 'success');
+                  // ダウンロード完了フラグをリセット
+                  window.downloadInitiated = false;
                 }, 3500);
                 
                 // アプリの状態を更新
@@ -2625,17 +3433,202 @@
               } else {
                 console.error('ダウンロード処理失敗:', result.message);
                 showMessage('export-message', result.message, 'error');
+                // ダウンロードエラー時もフラグをリセット
+                window.downloadInitiated = false;
               }
             })
             .withFailureHandler(function(error) {
               console.error('downloadExportCsv: エラー発生', error);
               if (downloadBtn) downloadBtn.disabled = false;
               showMessage('export-message', `エラーが発生しました: ${error}`, 'error');
+              // ダウンロードエラー時もフラグをリセット
+              window.downloadInitiated = false;
             })
             .downloadExportCsv();
         } catch (e) {
           console.error('downloadExportCsv関数の実行中にエラーが発生しました:', e);
           showMessage('export-message', `予期せぬエラー: ${e.message}`, 'error');
+          // エラー時もフラグをリセット
+          window.downloadInitiated = false;
+        }
+      }
+      
+      /**
+       * コンソールログをCSVファイルとしてエクスポートする関数
+       */
+      function exportConsoleLogToCsv() {
+        console.log('コンソールログCSVエクスポートを開始します');
+        
+        try {
+          // ユーザーにコンソールログの場所を説明
+          const message = 'ブラウザの開発者ツールでコンソールログをコピーしてください:\n\n' +
+                          '1. F12キーまたは右クリック→「検証」でデベロッパーツールを開く\n' +
+                          '2. Consoleタブを選択\n' +
+                          '3. Ctrl+A (Mac: Cmd+A) で全選択\n' +
+                          '4. Ctrl+C (Mac: Cmd+C) でコピー\n' +
+                          '5. 下のテキストエリアに貼り付けてください';
+          
+          // モーダルダイアログでテキストエリアを表示
+          showConsoleLogInputModal();
+          
+        } catch (e) {
+          console.error('コンソールログエクスポートでエラー:', e);
+          showUnifiedMessage(`エラーが発生しました: ${e.message}`, 'error');
+        }
+      }
+      
+      /**
+       * コンソールログ入力用モーダルを表示
+       */
+      function showConsoleLogInputModal() {
+        const modalHtml = `
+          <div id="console-log-modal" style="
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0; 
+            background: rgba(0,0,0,0.5); z-index: 10000; display: flex; 
+            align-items: center; justify-content: center;
+          ">
+            <div style="
+              background: white; padding: 20px; border-radius: 8px; 
+              width: 80%; max-width: 600px; max-height: 80vh; overflow: hidden;
+              display: flex; flex-direction: column;
+            ">
+              <h3 style="margin: 0 0 15px 0; color: #374151;">コンソールログCSVエクスポート</h3>
+              <p style="font-size: 14px; color: #6B7280; margin-bottom: 15px;">
+                ブラウザのコンソールログをコピーして下のテキストエリアに貼り付けてください
+              </p>
+              <textarea id="console-log-input" placeholder="コンソールログをここに貼り付けてください..." style="
+                width: 100%; height: 300px; padding: 10px; border: 1px solid #D1D5DB; 
+                border-radius: 6px; font-family: monospace; font-size: 12px;
+                resize: vertical; box-sizing: border-box;
+              "></textarea>
+              <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 15px;">
+                <button onclick="closeConsoleLogModal()" style="
+                  padding: 8px 16px; background: #6B7280; color: white; border: none; 
+                  border-radius: 6px; cursor: pointer;
+                ">キャンセル</button>
+                <button onclick="processConsoleLogToCsv()" style="
+                  padding: 8px 16px; background: #4F46E5; color: white; border: none; 
+                  border-radius: 6px; cursor: pointer;
+                ">CSVとしてダウンロード</button>
+              </div>
+            </div>
+          </div>
+        `;
+        
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+      }
+      
+      /**
+       * コンソールログ入力モーダルを閉じる
+       */
+      function closeConsoleLogModal() {
+        const modal = document.getElementById('console-log-modal');
+        if (modal) {
+          modal.remove();
+        }
+      }
+      
+      /**
+       * コンソールログをCSVに変換してダウンロード
+       */
+      function processConsoleLogToCsv() {
+        const input = document.getElementById('console-log-input');
+        if (!input || !input.value.trim()) {
+          alert('コンソールログを入力してください');
+          return;
+        }
+        
+        try {
+          const logText = input.value.trim();
+          const lines = logText.split('\n');
+          
+          // CSVヘッダー
+          const csvRows = [
+            'Timestamp,Level,Source,Message'
+          ];
+          
+          // 各行を解析してCSV形式に変換
+          lines.forEach((line, index) => {
+            if (line.trim()) {
+              // 基本的なログ形式を解析（タイムスタンプ、レベル、メッセージなど）
+              const csvLine = parseLogLineToCSV(line, index + 1);
+              if (csvLine) {
+                csvRows.push(csvLine);
+              }
+            }
+          });
+          
+          // CSVファイルを生成
+          const csvContent = csvRows.join('\n');
+          const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+          const url = URL.createObjectURL(blob);
+          
+          // ダウンロード用リンクを作成
+          const downloadLink = document.createElement('a');
+          downloadLink.href = url;
+          downloadLink.download = `console-log_${new Date().toISOString().substring(0, 19).replace(/[T:]/g, '_')}.csv`;
+          downloadLink.style.display = 'none';
+          document.body.appendChild(downloadLink);
+          downloadLink.click();
+          
+          // 後片付け
+          setTimeout(() => {
+            URL.revokeObjectURL(url);
+            document.body.removeChild(downloadLink);
+            closeConsoleLogModal();
+            showUnifiedMessage('コンソールログCSVファイルのダウンロードが完了しました', 'success');
+          }, 100);
+          
+        } catch (e) {
+          console.error('CSV変換エラー:', e);
+          alert(`CSV変換中にエラーが発生しました: ${e.message}`);
+        }
+      }
+      
+      /**
+       * ログ行をCSV形式に変換
+       */
+      function parseLogLineToCSV(line, lineNumber) {
+        try {
+          // CSVでの特殊文字をエスケープ
+          const escapeCSV = (str) => {
+            if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+              return `"${str.replace(/"/g, '""')}"`;
+            }
+            return str;
+          };
+          
+          // 基本的なログ形式のパターンマッチング
+          let timestamp = '';
+          let level = 'INFO';
+          let source = '';
+          let message = line;
+          
+          // タイムスタンプパターンを検出
+          const timestampMatch = line.match(/(\d{4}-\d{2}-\d{2}[T\s]\d{2}:\d{2}:\d{2})/);
+          if (timestampMatch) {
+            timestamp = timestampMatch[1];
+            message = line.replace(timestampMatch[0], '').trim();
+          }
+          
+          // ログレベルを検出
+          if (line.toLowerCase().includes('error')) level = 'ERROR';
+          else if (line.toLowerCase().includes('warn')) level = 'WARN';
+          else if (line.toLowerCase().includes('debug')) level = 'DEBUG';
+          
+          // ソースファイルを検出
+          const sourceMatch = line.match(/([a-zA-Z0-9_-]+\.(js|html|css)):\d+/);
+          if (sourceMatch) {
+            source = sourceMatch[1];
+          }
+          
+          // CSVフォーマットで返す
+          return `${escapeCSV(timestamp || new Date().toISOString())},${escapeCSV(level)},${escapeCSV(source)},${escapeCSV(message)}`;
+          
+        } catch (e) {
+          console.error(`Line ${lineNumber} parsing error:`, e);
+          // エラーの場合は基本情報のみ返す
+          return `${new Date().toISOString()},ERROR,parser,"${line.replace(/"/g, '""')}"`;
         }
       }
       
@@ -2983,17 +3976,7 @@
           console.error('auto-file-uploadエレメントが見つかりません');
         }
         
-        // 自動処理用ファイル選択ボタン
-        if (autoFileSelectBtn) {
-          autoFileSelectBtn.addEventListener('click', function(e) {
-            console.log('ファイル選択ボタンクリック');
-            e.preventDefault();
-            e.stopPropagation();
-            if (autoFileUpload) {
-              autoFileUpload.click();
-            }
-          }, false);
-        }
+        // 自動処理用ファイル選択ボタンはHTMLのonclick属性で処理（重複削除）
         
         // 自動処理ボタン
         if (autoProcessBtn) {
@@ -3020,14 +4003,19 @@
         // ファイル内容を読み込み
         const reader = new FileReader();
         reader.onload = function(e) {
+          console.log('FileReader-3 onload実行開始');
           window.autoFileContent = e.target.result;
           console.log('ファイル読み込み完了:', file.name, 'サイズ:', formatFileSize(file.size));
           
-          // 自動処理ボタンを有効化
+          // 自動処理ボタンとUS絞り込みボタンを有効化
           const autoProcessBtn = document.getElementById('auto-process-btn');
+          const filterBtn = document.getElementById('filter-us-btn');
           if (autoProcessBtn) {
             autoProcessBtn.disabled = false;
           }
+          // 新しいButtonStateManagerを使用
+          ButtonStateManager.updateFromFileSelection();
+          console.log('FileReader-3 onload実行完了');
         };
         
         reader.onerror = function(e) {

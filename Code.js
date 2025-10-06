@@ -1,20 +1,22 @@
 /**
- * eBay出品管理ツール v1.6.1
+ * eBay出品管理ツール
  * スプレッドシート上でeBayの重複出品を検出・管理するツール
- * 最終更新: 2024-12-30 - CONFIG参照エラーの修正と動的バッチサイズ最適化
+ * 最終更新: 2025-10-01 - バージョン管理統一とUS絞り込み最適化
  */
 
 // EbayTool名前空間 - 拡張版
 var EbayTool = (function() {
   // プライベート変数と定数
   const CONFIG = {
-    VERSION: '1.6.2',
+    VERSION: '1.6.40',
     SHEET_NAMES: {
       IMPORT: 'インポートデータ',
       DUPLICATES: '重複リスト',
       EXPORT: 'エクスポート',
       ANALYSIS: '分析',
-      LOG: 'ログ'
+      LOG: 'ログ',
+      PROCESS_STATE: '処理状態',
+      PERFORMANCE: '性能ログ'
     },
     COLORS: {
       PRIMARY: '#4F46E5',
@@ -29,6 +31,9 @@ var EbayTool = (function() {
     MAX_LOG_ROWS: 500, // ログの最大行数
     SIMILARITY_THRESHOLD: 0.7, // タイトル類似度の閾値
     MAX_FILE_SIZE: 10, // CSVファイルの最大サイズ（MB）
+    MAX_EXECUTION_TIME: 330000, // 最大実行時間(5.5分)
+    SAFETY_MARGIN: 30000, // 安全マージン(30秒)
+    CHUNK_SIZE: 1000, // 分割処理時のチャンクサイズ
     
     // 動的バッチサイズ計算
     calculateOptimalBatchSize: function(dataSize) {
@@ -711,242 +716,425 @@ function validateData(data, requiredColumns, validations = {}) {
  * @return {Object} インポート結果
  */
 function importCsvData(csvData) {
+  const startTime = new Date().getTime();
+  let dataRows = 0;
+  let fileSizeMB = 0;
+
   try {
-    console.log("importCsvData開始: CSVデータサイズ=" + (csvData ? csvData.length : 0) + "バイト");
-    
-    // CSVデータの存在チェック - 最小限のチェックのみ
+    fileSizeMB = csvData ? Math.round(csvData.length / 1024 / 1024 * 100) / 100 : 0;
+    console.log(`🚀 [${new Date().toLocaleTimeString()}] 高速CSVインポート開始: データサイズ=${csvData ? csvData.length : 0}バイト (${fileSizeMB}MB)`);
+
     if (!csvData || typeof csvData !== 'string' || csvData.trim() === '') {
+      // 失敗ログを記録
+      logPerformance('CSVインポート', startTime, new Date().getTime(), {
+        success: false,
+        errorMessage: 'CSVデータが空または無効',
+        fileSizeMB: fileSizeMB,
+        dataRows: 0
+      });
       return { success: false, message: 'CSVデータが空または無効です。' };
     }
-    
-    // CSVデータをパース - シンプルかつ高速なパース処理
-    let csvRows;
+
+    // 手動インポートを模倣した超高速処理
     try {
-      // 高速なCSV分割
-      csvData = csvData.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-      
-      // BOMを除去
+      // 1. 最小限の前処理
       if (csvData.charCodeAt(0) === 0xFEFF) {
-        csvData = csvData.substring(1);
+        csvData = csvData.substring(1); // BOM除去
       }
-      
-      // 単純な行分割
-      const lines = csvData.split('\n');
-      
-      // 空行をフィルタして各行をCSVとして解析
-      csvRows = lines
-        .filter(line => line.trim()) // 空行を除外
-        .map(line => {
-          try {
-            // 引用符を含む場合は複雑なパース処理
-            if (line.includes('"')) {
-              const result = [];
-              let position = 0;
-              let fieldStart = 0;
-              let inQuotes = false;
-              
-              // 1文字ずつ解析して引用符を正確に処理
-              while (position < line.length) {
-                const char = line[position];
-                
-                if (char === '"') {
-                  // 引用符の処理
-                  if (inQuotes) {
-                    // 次の文字も引用符かチェック (エスケープされた引用符かどうか)
-                    if (position + 1 < line.length && line[position + 1] === '"') {
-                      // 二重引用符はエスケープとして扱う
-                      position++; // 追加の引用符をスキップ
-                    } else {
-                      // 単一の引用符は閉じる
-                      inQuotes = false;
-                    }
-                  } else {
-                    // 引用符を開く
-                    inQuotes = true;
-                  }
-                } else if (char === ',' && !inQuotes) {
-                  // 引用符の外側のカンマはフィールド区切り
-                  let field = line.substring(fieldStart, position);
-                  
-                  // 引用符の除去 (最初と最後の引用符のみ)
-                  if (field.startsWith('"') && field.endsWith('"')) {
-                    field = field.substring(1, field.length - 1);
-                  }
-                  
-                  // 二重引用符を単一引用符に戻す
-                  field = field.replace(/""/g, '"');
-                  
-                  result.push(field);
-                  fieldStart = position + 1;
-                }
-                
-                position++;
-              }
-              
-              // 最後のフィールドを追加
-              let lastField = line.substring(fieldStart);
-              
-              // 引用符の除去 (最初と最後の引用符のみ)
-              if (lastField.startsWith('"') && lastField.endsWith('"')) {
-                lastField = lastField.substring(1, lastField.length - 1);
-              }
-              
-              // 二重引用符を単一引用符に戻す
-              lastField = lastField.replace(/""/g, '"');
-              
-              result.push(lastField);
-              return result;
-            } else {
-              // 引用符がない場合は単純な分割
-              return line.split(',');
+
+      // 2. 単純な行分割（引用符処理は最小限）
+      const lines = csvData.split(/\r?\n/);
+      console.log(`行分割完了: ${lines.length}行`);
+
+      // 3. 引用符対応CSV分割
+      console.log(`📋 [${new Date().toLocaleTimeString()}] 引用符対応CSVパース開始`);
+      const csvRows = [];
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (line) {
+          // 引用符内カンマを適切に処理
+          csvRows.push(parseCSVLine(line));
+        }
+      }
+
+      if (csvRows.length <= 1) {
+        return { success: false, message: 'CSVデータが不十分です。' };
+      }
+
+      console.log(`✅ [${new Date().toLocaleTimeString()}] CSV引用符対応パース完了: ${csvRows.length}行 x ${csvRows[0].length}列`);
+
+      // 4. データ品質確認
+      const qualityCheck = validateCSVQuality(csvRows);
+      if (!qualityCheck.isValid) {
+        console.warn(`⚠️  データ品質問題検出: ${qualityCheck.issues.join(', ')}`);
+      } else {
+        console.log(`✅ データ品質確認完了: 問題なし`);
+      }
+
+      // 5. 列数統一（必要最小限）
+      const headerLength = csvRows[0].length;
+      for (let i = 1; i < csvRows.length; i++) {
+        const row = csvRows[i];
+        if (row.length !== headerLength) {
+          // 短い行は空文字で埋める、長い行は切り詰める
+          csvRows[i] = row.slice(0, headerLength).concat(
+            Array(Math.max(0, headerLength - row.length)).fill('')
+          );
+        }
+      }
+
+      console.log(`列数統一完了: 全${csvRows.length}行を${headerLength}列に統一`);
+      dataRows = csvRows.length - 1; // ヘッダー除く
+
+      // 5. Google Sheetsの最適化API使用（一括書き込み）
+      console.log(`📝 [${new Date().toLocaleTimeString()}] シート書き込み開始: ${csvRows.length}行`);
+
+      let result;
+      try {
+        result = writeToSheetOptimized(csvRows);
+
+        // 成功時の処理
+        if (result.success) {
+          const elapsedSeconds = ((new Date().getTime() - startTime) / 1000).toFixed(1);
+          console.log(`✅ [${new Date().toLocaleTimeString()}] CSVインポート成功: ${dataRows}行を${elapsedSeconds}秒で処理`);
+
+          logPerformance('CSVインポート', startTime, new Date().getTime(), {
+            success: true,
+            fileSizeMB: fileSizeMB,
+            dataRows: dataRows,
+            elapsedSeconds: parseFloat(elapsedSeconds),
+            additionalInfo: {
+              totalRows: csvRows.length,
+              columns: headerLength,
+              method: '引用符対応高速インポート',
+              dataQuality: qualityCheck.isValid ? '良好' : `問題あり: ${qualityCheck.issues.join(', ')}`,
+              columnMismatchCount: qualityCheck.stats.columnMismatchCount,
+              avgEmptyFields: qualityCheck.stats.avgEmptyFields.toFixed(1)
             }
-          } catch (fieldError) {
-            console.error("フィールド処理エラー:", fieldError, "行:", line);
-            // エラー時はシンプルな分割にフォールバック
-            return line.split(',');
+          });
+        }
+
+        return result;
+
+      } catch (writeError) {
+        // タイムアウト等のエラー時も性能ログを記録
+        const elapsedSeconds = ((new Date().getTime() - startTime) / 1000).toFixed(1);
+        console.error(`⚠️ [${new Date().toLocaleTimeString()}] シート書き込みタイムアウト: ${elapsedSeconds}秒経過 - ${writeError.message}`);
+
+        logPerformance('CSVインポート', startTime, new Date().getTime(), {
+          success: false,
+          errorMessage: `タイムアウト: ${writeError.message}`,
+          fileSizeMB: fileSizeMB,
+          dataRows: dataRows,
+          elapsedSeconds: parseFloat(elapsedSeconds),
+          additionalInfo: {
+            totalRows: csvRows.length,
+            columns: headerLength,
+            method: '高速インポート(タイムアウト)'
           }
         });
-      
-      console.log("CSVパース完了: 行数=" + csvRows.length);
-    } catch (parseError) {
-      console.error("CSVパースエラー:", parseError);
-      // 最もシンプルな方法でフォールバック
-      csvRows = csvData.split('\n').map(line => line.split(','));
-      console.log("基本的なパースで成功: 行数=" + csvRows.length);
-    }
-    
-    // 最小限のデータ検証
-    if (!csvRows || !Array.isArray(csvRows) || csvRows.length <= 1) {
-      return { success: false, message: 'CSVデータが不十分です。有効なデータ行がありません。' };
-    }
-    
-    // 行ごとの列数を統一する（列数が異なるCSVファイルに対応）
-    try {
-      // ヘッダー行の列数を取得（基準とする列数）
-      const headerRowLength = csvRows[0].length;
-      console.log(`ヘッダー行の列数: ${headerRowLength}`);
-      
-      // 列数が少ない行には空文字列を追加、多い行は切り詰める
-      for (let i = 1; i < csvRows.length; i++) {
-        const currentRowLength = csvRows[i].length;
-        
-        if (currentRowLength < headerRowLength) {
-          // 列数が足りない場合、空文字列で埋める
-          const missingCols = headerRowLength - currentRowLength;
-          csvRows[i] = csvRows[i].concat(Array(missingCols).fill(''));
-          
-          if (i < 5 || i % 1000 === 0) { // 最初の数行と1000行ごとにログ出力
-            console.log(`行 ${i+1}: 列数を ${currentRowLength} から ${headerRowLength} に調整しました（${missingCols}列追加）`);
-          }
-        } else if (currentRowLength > headerRowLength) {
-          // 列数が多い場合、余分な列を削除
-          csvRows[i] = csvRows[i].slice(0, headerRowLength);
-          
-          if (i < 5 || i % 1000 === 0) { // 最初の数行と1000行ごとにログ出力
-            console.log(`行 ${i+1}: 列数を ${currentRowLength} から ${headerRowLength} に調整しました（${currentRowLength - headerRowLength}列削除）`);
-          }
-        }
+
+        // エラーを再スロー（上位でキャッチされる）
+        throw writeError;
       }
-      
-      console.log(`全行の列数を ${headerRowLength} に統一しました`);
-    } catch (formatError) {
-      console.error("列数調整中にエラー:", formatError);
-      // エラーがあっても処理を継続
+
+    } catch (error) {
+      console.error("高速インポートエラー:", error);
+      // エラーログを記録
+      logPerformance('CSVインポート', startTime, new Date().getTime(), {
+        success: false,
+        errorMessage: `高速インポートエラー: ${error.message}`,
+        fileSizeMB: fileSizeMB,
+        dataRows: dataRows,
+        additionalInfo: { method: '高速インポート→フォールバック' }
+      });
+      // フォールバック: 従来方式
+      return importCsvDataFallback(csvData);
     }
-    
-    // スプレッドシートにインポート
-    try {
-      // スプレッドシートの準備
-      const ss = SpreadsheetApp.getActiveSpreadsheet();
-      let sheet = ss.getSheetByName(EbayTool.getConfig().SHEET_NAMES.IMPORT);
-      
-      if (!sheet) {
-        sheet = ss.insertSheet(EbayTool.getConfig().SHEET_NAMES.IMPORT);
-      } else {
-        sheet.clear();
-      }
-      
-      // 最大限のバッチサイズで書き込み
-      const LARGE_BATCH_SIZE = 10000; 
-      
-      // 総行数を出力
-      console.log(`シートにデータを書き込みます: ${csvRows.length}行 x ${csvRows[0].length}列`);
-      
-      // バッチごとに書き込み
-      for (let i = 0; i < csvRows.length; i += LARGE_BATCH_SIZE) {
-        const endIdx = Math.min(i + LARGE_BATCH_SIZE, csvRows.length);
-        const batch = csvRows.slice(i, endIdx);
-        
-        // null/undefinedを空文字に変換してからシートに書き込み
-        const cleanBatch = batch.map(row => 
-          row.map(cell => (cell === null || cell === undefined) ? '' : cell)
-        );
-        
-        try {
-          // 直接シートに書き込み
-          sheet.getRange(i + 1, 1, cleanBatch.length, cleanBatch[0].length).setValues(cleanBatch);
-          console.log(`${i + 1}行目から${endIdx}行目までの${cleanBatch.length}行を書き込みました`);
-        } catch (batchError) {
-          console.error(`バッチ書き込み中にエラー（${i + 1}～${endIdx}行）:`, batchError);
-          
-          // エラーが発生した場合は1行ずつ書き込みを試みる（最後の手段）
-          if (i === 0) { // 最初のバッチでエラーが起きた場合のみ（1行ずつだと時間がかかりすぎるため）
-            console.log("1行ずつの書き込みを試みます...");
-            for (let j = 0; j < Math.min(100, batch.length); j++) { // 最初の100行だけ処理
-              try {
-                const singleRow = [cleanBatch[j]];
-                sheet.getRange(i + j + 1, 1, 1, singleRow[0].length).setValues(singleRow);
-              } catch (rowError) {
-                console.error(`行 ${i + j + 1} の書き込みに失敗:`, rowError);
-              }
-            }
-          }
-          
-          // それでも失敗する場合はエラーを返す
-          throw new Error(`データの書き込みに問題があります: ${batchError.message}`);
-        }
-      }
-      
-      // 最小限の書式設定
-      sheet.getRange(1, 1, 1, csvRows[0].length)
-        .setBackground(EbayTool.getColor('PRIMARY'))
-        .setFontColor('white')
-        .setFontWeight('bold');
-      
-      // 先頭行を固定
-      sheet.setFrozenRows(1);
-      
-      // 成功メッセージを返す
-      return { 
-        success: true, 
-        message: `${csvRows.length - 1}件のデータを正常にインポートしました。`,
-        rowCount: csvRows.length - 1
-      };
-    } catch (sheetError) {
-      console.error("シート処理中にエラー:", sheetError);
-      return { 
-        success: false, 
-        message: `スプレッドシートへの書き込み中にエラーが発生しました: ${sheetError.message}`
-      };
-    }
+
   } catch (error) {
-    console.error("importCsvData関数でエラー:", error);
-    return { 
-      success: false, 
-      message: `CSVのインポートに失敗しました: ${error.message}`
+    console.error("CSVインポート全体エラー:", error);
+    // 全体エラーログを記録
+    logPerformance('CSVインポート', startTime, new Date().getTime(), {
+      success: false,
+      errorMessage: `全体エラー: ${error.message}`,
+      fileSizeMB: fileSizeMB,
+      dataRows: 0
+    });
+    return { success: false, message: `インポートに失敗しました: ${error.message}` };
+  }
+}
+
+// 手動インポート模倣: Google Sheets API直接利用
+function writeToSheetOptimized(csvRows) {
+  try {
+    console.log(`🚀 手動インポート模倣開始: ${csvRows.length}行 x ${csvRows[0].length}列`);
+
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    let sheet = ss.getSheetByName(EbayTool.getConfig().SHEET_NAMES.IMPORT);
+
+    if (!sheet) {
+      sheet = ss.insertSheet(EbayTool.getConfig().SHEET_NAMES.IMPORT);
+    } else {
+      sheet.clear();
+    }
+
+    // **手動インポートと同じ方法: 一括でsetValues実行**
+    // バッチ処理、分割処理、休憩を完全廃止
+
+    // データクリーニング（最小限）
+    const cleanData = csvRows.map(row =>
+      row.map(cell => cell == null ? '' : String(cell))
+    );
+
+    console.log(`データクリーニング完了 - 一括書き込み実行`);
+
+    // **一括書き込み実行（手動インポートと同様）**
+    const range = sheet.getRange(1, 1, cleanData.length, cleanData[0].length);
+    range.setValues(cleanData);
+
+    console.log(`✅ 手動インポート模倣完了: 総${csvRows.length}行を一括書き込み`);
+
+    return {
+      success: true,
+      message: `CSVインポート完了: ${csvRows.length}行のデータをインポートしました`,
+      importedRows: csvRows.length - 1, // ヘッダー除く
+      totalRows: csvRows.length
+    };
+
+  } catch (error) {
+    console.error("❌ 一括書き込みエラー:", error);
+    throw error;
+  }
+}
+
+/**
+ * 引用符内カンマを適切に処理するCSVパーサー
+ */
+function parseCSVLine(line) {
+  const result = [];
+  let current = '';
+  let inQuotes = false;
+  let i = 0;
+
+  while (i < line.length) {
+    const char = line[i];
+    const nextChar = line[i + 1];
+
+    if (char === '"') {
+      if (inQuotes && nextChar === '"') {
+        // エスケープされた引用符 ("")
+        current += '"';
+        i += 2;
+      } else {
+        // 引用符の開始/終了
+        inQuotes = !inQuotes;
+        i++;
+      }
+    } else if (char === ',' && !inQuotes) {
+      // 引用符外のカンマ = フィールド区切り
+      result.push(current.trim());
+      current = '';
+      i++;
+    } else {
+      // 通常の文字
+      current += char;
+      i++;
+    }
+  }
+
+  // 最後のフィールドを追加
+  result.push(current.trim());
+
+  return result;
+}
+
+/**
+ * CSVデータの品質を確認する関数
+ */
+function validateCSVQuality(csvRows) {
+  const issues = [];
+  const headerRow = csvRows[0];
+  const expectedColumns = headerRow.length;
+
+  // 1. 列数の一貫性チェック
+  let columnMismatchCount = 0;
+  for (let i = 1; i < csvRows.length; i++) {
+    if (csvRows[i].length !== expectedColumns) {
+      columnMismatchCount++;
+    }
+  }
+
+  if (columnMismatchCount > 0) {
+    const percentage = ((columnMismatchCount / (csvRows.length - 1)) * 100).toFixed(1);
+    issues.push(`列数不一致: ${columnMismatchCount}行 (${percentage}%)`);
+  }
+
+  // 2. 重要な列の存在確認
+  const requiredColumns = ['item', 'title', 'site'];
+  const headerLower = headerRow.map(h => String(h).toLowerCase().replace(/\s+/g, ''));
+
+  for (const required of requiredColumns) {
+    const found = headerLower.some(h => h.includes(required));
+    if (!found) {
+      issues.push(`必須列不在: '${required}' 関連列が見つかりません`);
+    }
+  }
+
+  // 3. データサンプル確認（最初の10行）
+  let emptyFieldCount = 0;
+  const sampleSize = Math.min(10, csvRows.length - 1);
+
+  for (let i = 1; i <= sampleSize; i++) {
+    const row = csvRows[i];
+    const emptyFields = row.filter(field => !field || field.trim() === '').length;
+    emptyFieldCount += emptyFields;
+  }
+
+  const avgEmptyFields = emptyFieldCount / sampleSize;
+  if (avgEmptyFields > expectedColumns * 0.3) {
+    issues.push(`空フィールド多数: 平均${avgEmptyFields.toFixed(1)}個/行`);
+  }
+
+  return {
+    isValid: issues.length === 0,
+    issues: issues,
+    stats: {
+      totalRows: csvRows.length,
+      expectedColumns: expectedColumns,
+      columnMismatchCount: columnMismatchCount,
+      avgEmptyFields: avgEmptyFields
+    }
+  };
+}
+
+/**
+ * インポート状況確認関数（タイムアウト後の確認用）
+ */
+function checkImportStatus() {
+  try {
+    console.log('📋 軽量インポート状況確認開始');
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = ss.getSheetByName(EbayTool.getConfig().SHEET_NAMES.IMPORT);
+
+    if (!sheet) {
+      console.log('❌ インポートシートが見つかりません');
+      return { hasData: false, rowCount: 0, message: 'インポートシートが見つかりません' };
+    }
+
+    // 軽量な確認: 行数と列数のみ取得
+    const lastRow = sheet.getLastRow();
+    const lastCol = sheet.getLastColumn();
+
+    console.log(`📊 シート情報: ${lastRow}行 x ${lastCol}列`);
+
+    if (lastRow <= 1) {
+      console.log('❌ データなし');
+      return { hasData: false, rowCount: 0, message: 'インポートデータがありません' };
+    }
+
+    // 軽量確認: ヘッダー行の最初の3セルのみチェック
+    if (lastCol > 0) {
+      const headerSample = sheet.getRange(1, 1, 1, Math.min(3, lastCol)).getValues()[0];
+      const hasHeaders = headerSample.some(cell => cell && String(cell).trim().length > 0);
+
+      if (hasHeaders) {
+        console.log(`✅ インポート確認成功: ${lastRow}行 x ${lastCol}列のデータを検出`);
+
+        // 軽量ログ: コンソールのみ、性能ログシートへの書き込みは省略
+        console.log(`📊 [${new Date().toLocaleTimeString()}] 軽量確認完了`);
+
+        return {
+          hasData: true,
+          rowCount: lastRow - 1, // ヘッダー除く
+          totalRows: lastRow,
+          columns: lastCol,
+          message: `インポート完了: ${lastRow - 1}行のデータ`
+        };
+      }
+    }
+
+    console.log('❌ 無効なデータ形式');
+    return { hasData: false, rowCount: 0, message: '無効なデータ形式' };
+
+  } catch (error) {
+    console.error('インポート状況確認エラー:', error);
+    return { hasData: false, rowCount: 0, message: `確認エラー: ${error.message}` };
+  }
+}
+
+/**
+ * 超軽量インポート状況確認（最小限の処理のみ）
+ */
+function checkImportStatusUltraLight() {
+  try {
+    console.log('🔍 超軽量インポート状況確認開始');
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = ss.getSheetByName('インポートデータ'); // ハードコードで高速化
+
+    if (!sheet) {
+      console.log('❌ インポートシートなし');
+      return { hasData: false, rowCount: 0, message: 'シートなし' };
+    }
+
+    // 最小限の確認: 行数のみ
+    const lastRow = sheet.getLastRow();
+    console.log(`📊 行数: ${lastRow}`);
+
+    if (lastRow > 1) {
+      console.log(`✅ 超軽量確認成功: ${lastRow - 1}行`);
+      return {
+        hasData: true,
+        rowCount: lastRow - 1,
+        totalRows: lastRow,
+        message: `データあり: ${lastRow - 1}行`
+      };
+    }
+
+    console.log('❌ データなし');
+    return { hasData: false, rowCount: 0, message: 'データなし' };
+
+  } catch (error) {
+    console.error('超軽量確認エラー:', error);
+    return { hasData: false, rowCount: 0, message: `エラー: ${error.message}` };
+  }
+}
+
+// フォールバック用の従来処理（簡略化）
+function importCsvDataFallback(csvData) {
+  try {
+    console.log("フォールバック処理実行");
+    // 基本的なCSV処理のみ
+    const lines = csvData.replace(/\r\n/g, '\n').split('\n');
+    const csvRows = lines.filter(line => line.trim()).map(line => line.split(','));
+
+    if (csvRows.length <= 1) {
+      return { success: false, message: 'CSVデータが不十分です。' };
+    }
+
+    // フォールバック: 基本的なシート書き込み
+    return writeToSheetOptimized(csvRows);
+
+  } catch (error) {
+    console.error("フォールバック処理エラー:", error);
+    return {
+      success: false,
+      message: `フォールバック処理に失敗しました: ${error.message}`
     };
   }
 }
 
 /**
- * インポートデータから重複を検出する関数（シンプル化バージョン）
+ * インポートデータから重複を検出する関数（最適化チャンク処理対応）
  * @return {Object} 処理結果
  */
 function detectDuplicates() {
+  const startTime = new Date().getTime();
+
   try {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     const SHEET_NAMES = EbayTool.getConfig().SHEET_NAMES;
-    
+
     const importSheet = ss.getSheetByName(SHEET_NAMES.IMPORT);
     
     if (!importSheet) {
@@ -958,7 +1146,6 @@ function detectDuplicates() {
     const lastCol = importSheet.getLastColumn();
     
     if (lastRow <= 1) {
-      // 重複データが0件の場合は正常完了として処理
       return { 
         success: true, 
         message: '検出された重複: 0件。重複データはありませんでした。',
@@ -967,82 +1154,232 @@ function detectDuplicates() {
       };
     }
     
-    // ヘッダーを取得
-    const headers = importSheet.getRange(1, 1, 1, lastCol).getValues()[0];
-    const headersLower = headers.map(h => String(h).toLowerCase().replace(/\s+/g, ''));
+    // データサイズに応じた処理方法を選択
+    const dataSize = lastRow - 1;
+    console.log(`重複検出開始: ${dataSize} 行のデータを処理します`);
     
-    // 必要な列のインデックスを探す
-    let titleIndex = -1;
-    let itemIdIndex = -1;
-    let startDateIndex = -1;
-    
-    // タイトル列を探す - 単純化
-    for (let i = 0; i < headers.length; i++) {
-      const headerLower = headersLower[i];
-      if (headerLower.includes('title') || headerLower.includes('name')) {
-        titleIndex = i;
-        break;
+    // 大規模データ（15,000行以上）の場合はチャンク処理
+    let result;
+    if (dataSize >= 15000) {
+      console.log('大規模データ検出: チャンク処理を実行します');
+      result = detectDuplicatesChunked(importSheet, lastRow, lastCol);
+    } else {
+      console.log('通常処理を実行します');
+      result = detectDuplicatesStandard(importSheet, lastRow, lastCol);
+    }
+
+    // 性能ログを記録
+    logPerformance('重複検出', startTime, new Date().getTime(), {
+      success: result.success,
+      dataRows: dataSize,
+      errorMessage: result.success ? '' : result.message,
+      additionalInfo: {
+        duplicateGroups: result.duplicateGroups || 0,
+        duplicateItems: result.duplicateItems || 0,
+        method: dataSize >= 15000 ? 'チャンク処理' : '通常処理'
       }
-    }
+    });
+
+    return result;
     
-    // ID列を探す - 単純化
-    for (let i = 0; i < headers.length; i++) {
-      const headerLower = headersLower[i];
-      if (headerLower.includes('item') || headerLower.includes('id') || headerLower.includes('number')) {
-        itemIdIndex = i;
-        break;
+  } catch (error) {
+    logError('detectDuplicates', error, '重複検出処理中');
+    SpreadsheetApp.getUi().alert(
+      'エラー',
+      getFriendlyErrorMessage(error, '重複検出中にエラーが発生しました。'),
+      SpreadsheetApp.getUi().ButtonSet.OK
+    );
+    
+    return { 
+      success: false, 
+      message: getFriendlyErrorMessage(error, '重複検出中にエラーが発生しました。'), 
+      stack: error.stack 
+    };
+  }
+}
+
+/**
+ * 列インデックスを検索するヘルパー関数
+ */
+function findColumnIndices(headers) {
+  const headersLower = headers.map(h => String(h).toLowerCase().replace(/\s+/g, ''));
+  
+  let titleIndex = -1;
+  let itemIdIndex = -1;
+  let startDateIndex = -1;
+  
+  // タイトル列を探す
+  for (let i = 0; i < headers.length; i++) {
+    const headerLower = headersLower[i];
+    if (headerLower.includes('title') || headerLower.includes('name')) {
+      titleIndex = i;
+      break;
+    }
+  }
+  
+  // ID列を探す
+  for (let i = 0; i < headers.length; i++) {
+    const headerLower = headersLower[i];
+    if (headerLower.includes('item') || headerLower.includes('id') || headerLower.includes('number')) {
+      itemIdIndex = i;
+      break;
+    }
+  }
+  
+  // 開始日列を探す
+  for (let i = 0; i < headers.length; i++) {
+    const headerLower = headersLower[i];
+    if (headerLower.includes('date') || headerLower.includes('start')) {
+      startDateIndex = i;
+      break;
+    }
+  }
+  
+  // デフォルト値を設定
+  if (titleIndex === -1 && headers.length > 1) titleIndex = 1;
+  if (itemIdIndex === -1 && headers.length > 0) itemIdIndex = 0;
+  if (startDateIndex === -1 && headers.length > 2) startDateIndex = 2;
+  
+  return { titleIndex, itemIdIndex, startDateIndex };
+}
+
+/**
+ * タイトルでグループ化するヘルパー関数
+ */
+function groupByTitle(allData, titleIndex, itemIdIndex, startDateIndex) {
+  const titleGroups = {};
+  
+  for (let i = 0; i < allData.length; i++) {
+    const row = allData[i];
+    const title = EbayTool.TextAnalyzer.normalizeTitle(String(row[titleIndex] || ''), false);
+    const itemId = String(row[itemIdIndex] || '').trim();
+    const startDate = row[startDateIndex];
+    
+    if (title && itemId) {
+      if (!titleGroups[title]) {
+        titleGroups[title] = [];
       }
+      titleGroups[title].push({
+        itemId: itemId,
+        title: title,
+        originalTitle: row[titleIndex],
+        startDate: startDate,
+        allData: row
+      });
     }
-    
-    // 開始日列を探す - 単純化
-    for (let i = 0; i < headers.length; i++) {
-      const headerLower = headersLower[i];
-      if (headerLower.includes('date') || headerLower.includes('start')) {
-        startDateIndex = i;
-        break;
-      }
-    }
-    
-    // 必要な列が見つからない場合は、デフォルト値を使用
-    if (titleIndex === -1 && headers.length > 1) {
-      titleIndex = 1;  // 2列目をタイトルと想定
-    }
-    
-    if (itemIdIndex === -1 && headers.length > 0) {
-      itemIdIndex = 0;  // 1列目をIDと想定
-    }
-    
-    if (startDateIndex === -1 && headers.length > 2) {
-      startDateIndex = 2;  // 3列目を日付と想定
-    }
-    
-    if (titleIndex === -1 || itemIdIndex === -1) {
+  }
+  
+  return titleGroups;
+}
+
+/**
+ * 重複シートを準備するヘルパー関数
+ */
+function prepareDuplicateSheet(ss, sheetName) {
+  let duplicateSheet = ss.getSheetByName(sheetName);
+  if (!duplicateSheet) {
+    duplicateSheet = ss.insertSheet(sheetName);
+  } else {
+    duplicateSheet.clear();
+  }
+  return duplicateSheet;
+}
+
+/**
+ * 標準的な重複検出処理（小～中規模データ用）
+ */
+function detectDuplicatesStandard(importSheet, lastRow, lastCol) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const SHEET_NAMES = EbayTool.getConfig().SHEET_NAMES;
+  
+  // ヘッダーを取得
+  const headers = importSheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  const { titleIndex, itemIdIndex, startDateIndex } = findColumnIndices(headers);
+  
+  if (titleIndex === -1 || itemIdIndex === -1) {
+    return { success: false, message: '必須カラム(タイトル、ID)が見つかりません。' };
+  }
+  
+  console.log(`重複検出に使用する列: title=${titleIndex} (${headers[titleIndex]}), itemId=${itemIdIndex} (${headers[itemIdIndex]}), startDate=${startDateIndex} (${headers[startDateIndex] || 'N/A'})`);
+  
+  // 全データを取得
+  const allData = importSheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
+  
+  // タイトルでグループ化
+  const titleGroups = groupByTitle(allData, titleIndex, itemIdIndex, startDateIndex);
+  
+  // 重複グループのみを抽出
+  const duplicateGroups = Object.values(titleGroups)
+    .filter(group => group.length > 1)
+    .sort((a, b) => b.length - a.length);
+  
+  // 重複リストシートを準備・作成
+  const duplicateSheet = prepareDuplicateSheet(ss, SHEET_NAMES.DUPLICATES);
+  createDuplicateListSheet(duplicateSheet, duplicateGroups, headers);
+  
+  ss.setActiveSheet(duplicateSheet);
+  
+  return { 
+    success: true, 
+    message: `${duplicateGroups.length}件の重複グループを検出しました。合計${getTotalDuplicates(duplicateGroups)}件の重複アイテムがあります。`,
+    duplicateGroups: duplicateGroups.length,
+    duplicateItems: getTotalDuplicates(duplicateGroups)
+  };
+}
+
+/**
+ * チャンク処理による重複検出（大規模データ用）
+ */
+function detectDuplicatesChunked(importSheet, lastRow, lastCol) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const SHEET_NAMES = EbayTool.getConfig().SHEET_NAMES;
+  const startTime = new Date().getTime();
+  const MAX_EXECUTION_TIME = 330000; // 5.5分
+  
+  // ヘッダーを取得
+  const headers = importSheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  const { titleIndex, itemIdIndex, startDateIndex } = findColumnIndices(headers);
+  
+  if (titleIndex === -1 || itemIdIndex === -1) {
+    return { success: false, message: '必須カラム(タイトル、ID)が見つかりません。' };
+  }
+  
+  console.log(`チャンク処理開始: ${lastRow-1} 行のデータを処理します`);
+  console.log(`重複検出に使用する列: title=${titleIndex} (${headers[titleIndex]}), itemId=${itemIdIndex} (${headers[itemIdIndex]}), startDate=${startDateIndex} (${headers[startDateIndex] || 'N/A'})`);
+  
+  const dataSize = lastRow - 1;
+  const CHUNK_SIZE = Math.min(3000, Math.max(1000, Math.floor(dataSize / 15))); // 動的チャンクサイズ
+  console.log(`チャンクサイズ: ${CHUNK_SIZE}`);
+  
+  const titleGroups = {};
+  let processedRows = 0;
+  
+  // チャンクごとに処理
+  for (let startRow = 2; startRow <= lastRow; startRow += CHUNK_SIZE) {
+    const currentTime = new Date().getTime();
+    if (currentTime - startTime > MAX_EXECUTION_TIME) {
+      console.log('実行時間制限に近づいたため処理を中断');
       return { 
         success: false, 
-        message: '必須カラム(タイトル、ID)が見つかりません。'
+        message: `タイムアウトが発生しました。${processedRows}/${dataSize} 行まで処理済み。データを分割して再実行してください。` 
       };
     }
     
-    console.log(`重複検出に使用する列: title=${titleIndex} (${headers[titleIndex]}), itemId=${itemIdIndex} (${headers[itemIdIndex]}), startDate=${startDateIndex} (${headers[startDateIndex] || 'N/A'})`);
+    const endRow = Math.min(startRow + CHUNK_SIZE - 1, lastRow);
+    const chunkSize = endRow - startRow + 1;
     
-    // 動的バッチサイズでデータを取得（パフォーマンス最適化）
-    const dataSize = lastRow - 1;
-    const CONFIG = EbayTool.getConfig();
-    const optimalBatchSize = CONFIG.calculateOptimalBatchSize(dataSize);
-    console.log(`データサイズ: ${dataSize}行, 最適バッチサイズ: ${optimalBatchSize}`);
+    console.log(`チャンク処理中: 行 ${startRow}-${endRow} (${chunkSize} 行)`);
     
-    const allData = importSheet.getRange(2, 1, lastRow - 1, lastCol).getValues();
+    // チャンクデータを取得
+    const chunkData = importSheet.getRange(startRow, 1, chunkSize, lastCol).getValues();
     
-    // タイトルでグループ化
-    const titleGroups = {};
-    // 各行を処理
-    for (let i = 0; i < allData.length; i++) {
-      const row = allData[i];
-      // タイトルの正規化（分析シートと同じロジック）
+    // チャンク内でタイトルグループ化
+    for (let i = 0; i < chunkData.length; i++) {
+      const row = chunkData[i];
       const title = EbayTool.TextAnalyzer.normalizeTitle(String(row[titleIndex] || ''), false);
       const itemId = String(row[itemIdIndex] || '').trim();
       const startDate = row[startDateIndex];
-      // 有効なタイトルとIDがある場合のみ処理
+      
       if (title && itemId) {
         if (!titleGroups[title]) {
           titleGroups[title] = [];
@@ -1057,43 +1394,498 @@ function detectDuplicates() {
       }
     }
     
-    // 重複グループのみを抽出（2つ以上のアイテムがあるグループ）
-    const duplicateGroups = Object.values(titleGroups)
-      .filter(group => group.length > 1)
-      .sort((a, b) => b.length - a.length);
+    processedRows += chunkSize;
     
-    // 重複リストシートを準備
-    let duplicateSheet = ss.getSheetByName(SHEET_NAMES.DUPLICATES);
-    if (!duplicateSheet) {
-      duplicateSheet = ss.insertSheet(SHEET_NAMES.DUPLICATES);
-    } else {
-      duplicateSheet.clear();
+    // 進捗ログ（5チャンクごと）
+    if ((startRow - 2) / CHUNK_SIZE % 5 === 0) {
+      const progress = Math.round((processedRows / dataSize) * 100);
+      console.log(`進捗: ${progress}% (${processedRows}/${dataSize} 行処理済み)`);
     }
     
-    // 重複リストを作成（単純化されたバージョン）
+    // メモリ使用量軽減のため短時間待機
+    Utilities.sleep(10);
+  }
+  
+  console.log('タイトルグループ化完了。重複抽出中...');
+  
+  // 重複グループのみを抽出
+  const duplicateGroups = Object.values(titleGroups)
+    .filter(group => group.length > 1)
+    .sort((a, b) => b.length - a.length);
+  
+  console.log(`${duplicateGroups.length} 件の重複グループを検出`);
+  
+  // 重複リストシートを準備・作成
+  const duplicateSheet = prepareDuplicateSheet(ss, SHEET_NAMES.DUPLICATES);
+  
+  // 大量データの場合はチャンク化して書き込み
+  if (duplicateGroups.length > 100) {
+    createDuplicateListSheetChunked(duplicateSheet, duplicateGroups, headers);
+  } else {
     createDuplicateListSheet(duplicateSheet, duplicateGroups, headers);
+  }
+  
+  ss.setActiveSheet(duplicateSheet);
+  
+  const processingTime = Math.round((new Date().getTime() - startTime) / 1000);
+  console.log(`チャンク処理完了: ${processingTime} 秒`);
+  
+  return { 
+    success: true, 
+    message: `${duplicateGroups.length}件の重複グループを検出しました。合計${getTotalDuplicates(duplicateGroups)}件の重複アイテムがあります。（処理時間: ${processingTime}秒）`,
+    duplicateGroups: duplicateGroups.length,
+    duplicateItems: getTotalDuplicates(duplicateGroups)
+  };
+}
+
+/**
+ * 重複リストシートを作成（チャンク処理版）
+ */
+function createDuplicateListSheetChunked(sheet, duplicateGroups, headers) {
+  console.log(`重複リストシート作成開始: ${duplicateGroups.length} グループ`);
+  
+  // ヘッダーを設定（従来版と同じ形式）
+  const duplicateHeaders = ['グループID', '重複タイプ', '処理'].concat(headers);
+  sheet.getRange(1, 1, 1, duplicateHeaders.length).setValues([duplicateHeaders]);
+  
+  let currentRow = 2;
+  const BATCH_SIZE = 1000; // 書き込み単位
+  let batchData = [];
+  
+  // グループごとに処理
+  for (let groupIndex = 0; groupIndex < duplicateGroups.length; groupIndex++) {
+    const group = duplicateGroups[groupIndex];
     
-    // 重複シートをアクティブにする
-    ss.setActiveSheet(duplicateSheet);
+    // グループをスタート日でソート（従来版と同じ）
+    group.sort((a, b) => {
+      if (!a.startDate || !b.startDate) return 0;
+      const dateA = new Date(a.startDate);
+      const dateB = new Date(b.startDate);
+      return dateB - dateA; // 新しい順（降順）でソート
+    });
     
-    return { 
-      success: true, 
-      message: `${duplicateGroups.length}件の重複グループを検出しました。合計${getTotalDuplicates(duplicateGroups)}件の重複アイテムがあります。`,
-      duplicateGroups: duplicateGroups.length,
-      duplicateItems: getTotalDuplicates(duplicateGroups)
+    for (let itemIndex = 0; itemIndex < group.length; itemIndex++) {
+      const item = group[itemIndex];
+      const row = new Array(duplicateHeaders.length).fill('');
+      
+      // グループIDと重複タイプの列を設定（従来版と同じ形式）
+      row[0] = `Group ${groupIndex + 1}`;                        // グループID
+      row[1] = `${group.length}件中${itemIndex + 1}件目`;       // 重複タイプ
+      row[2] = itemIndex === 0 ? '残す' : '終了';                // 処理（最新のみ残す）
+      
+      // 元のデータを3番目以降に配置（従来版と同じ）
+      item.allData.forEach((value, i) => {
+        row[i + 3] = value;
+      });
+      
+      batchData.push(row);
+      
+      // バッチサイズに達したら書き込み
+      if (batchData.length >= BATCH_SIZE) {
+        sheet.getRange(currentRow, 1, batchData.length, duplicateHeaders.length).setValues(batchData);
+        currentRow += batchData.length;
+        batchData = [];
+        console.log(`重複リスト書き込み中: ${currentRow - 2} 行完了`);
+      }
+    }
+  }
+  
+  // 残りのデータを書き込み
+  if (batchData.length > 0) {
+    sheet.getRange(currentRow, 1, batchData.length, duplicateHeaders.length).setValues(batchData);
+    console.log(`重複リスト作成完了: ${currentRow + batchData.length - 2} 行`);
+  }
+  
+  // ヘッダー行のフォーマット
+  const headerRange = sheet.getRange(1, 1, 1, duplicateHeaders.length);
+  EbayTool.UI.formatSheetHeader(headerRange);
+}
+
+/**
+ * 重複リストシートの構造をデバッグする関数
+ * @return {Object} デバッグ情報
+ */
+function debugDuplicateSheet() {
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const duplicateSheet = ss.getSheetByName(EbayTool.getSheetName('DUPLICATES'));
+    
+    if (!duplicateSheet) {
+      return { success: false, message: '重複リストシートが見つかりません' };
+    }
+    
+    const lastRow = duplicateSheet.getLastRow();
+    const lastCol = duplicateSheet.getLastColumn();
+    
+    if (lastRow <= 0) {
+      return { success: false, message: '重複リストシートにデータがありません' };
+    }
+    
+    // ヘッダー行を取得
+    const headers = duplicateSheet.getRange(1, 1, 1, lastCol).getValues()[0];
+    
+    // 処理列のインデックスを探す
+    const actionIndex = headers.indexOf('処理');
+    
+    // サンプルデータを取得（最初の5行）
+    const sampleData = lastRow > 1 ? 
+      duplicateSheet.getRange(1, 1, Math.min(6, lastRow), lastCol).getValues() : 
+      [headers];
+    
+    return {
+      success: true,
+      sheetInfo: {
+        lastRow: lastRow,
+        lastCol: lastCol,
+        headers: headers,
+        actionIndex: actionIndex,
+        hasActionColumn: actionIndex !== -1,
+        sampleData: sampleData
+      }
     };
   } catch (error) {
-    logError('detectDuplicates', error, '重複検出処理中');
+    return { success: false, message: `デバッグエラー: ${error.message}` };
+  }
+}
+
+/**
+ * エクスポート処理をデバッグする関数
+ * @return {Object} デバッグ情報
+ */
+function debugExportProcess() {
+  try {
+    // 重複リストシートの構造をチェック
+    const sheetDebug = debugDuplicateSheet();
+    if (!sheetDebug.success) {
+      return sheetDebug;
+    }
+    
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const duplicateSheet = ss.getSheetByName(EbayTool.getSheetName('DUPLICATES'));
+    const headers = sheetDebug.sheetInfo.headers;
+    const actionIndex = sheetDebug.sheetInfo.actionIndex;
+    const lastRow = sheetDebug.sheetInfo.lastRow;
+    
+    // ItemIDのインデックスを探す
+    let itemIdIndex = -1;
+    for (let i = 0; i < headers.length; i++) {
+      const header = String(headers[i]).toLowerCase();
+      if (header.includes('item') && (header.includes('id') || header.includes('number'))) {
+        itemIdIndex = i;
+        break;
+      }
+    }
+    
+    let endItemsCount = 0;
+    let sampleEndItems = [];
+    
+    if (actionIndex !== -1 && itemIdIndex !== -1 && lastRow > 1) {
+      // 処理列とItemID列の値を取得
+      const actionValues = duplicateSheet.getRange(2, actionIndex + 1, lastRow - 1, 1).getValues();
+      const itemIdValues = duplicateSheet.getRange(2, itemIdIndex + 1, lastRow - 1, 1).getValues();
+      
+      // 終了対象のアイテムをカウント・サンプル取得
+      for (let i = 0; i < actionValues.length; i++) {
+        if (actionValues[i][0] === '終了' && itemIdValues[i][0]) {
+          endItemsCount++;
+          if (sampleEndItems.length < 5) {
+            sampleEndItems.push({
+              row: i + 2,
+              action: actionValues[i][0],
+              itemId: itemIdValues[i][0]
+            });
+          }
+        }
+      }
+    }
+    
+    return {
+      success: true,
+      debugInfo: {
+        ...sheetDebug.sheetInfo,
+        itemIdIndex: itemIdIndex,
+        hasItemIdColumn: itemIdIndex !== -1,
+        endItemsCount: endItemsCount,
+        sampleEndItems: sampleEndItems
+      }
+    };
+  } catch (error) {
+    return { success: false, message: `エクスポートデバッグエラー: ${error.message}` };
+  }
+}
+
+/**
+ * US出品のみに絞り込む専用関数（eBay Mag対応）
+ * @return {Object} 処理結果
+ */
+/**
+ * 連続する行番号を範囲にグループ化
+ */
+function groupConsecutiveRows(rowNumbers) {
+  if (rowNumbers.length === 0) return [];
+
+  const sorted = [...rowNumbers].sort((a, b) => a - b);
+  const ranges = [];
+  let start = sorted[0];
+  let end = sorted[0];
+
+  for (let i = 1; i < sorted.length; i++) {
+    if (sorted[i] === end + 1) {
+      // 連続している
+      end = sorted[i];
+    } else {
+      // 連続が途切れた
+      ranges.push({ start: start, end: end });
+      start = sorted[i];
+      end = sorted[i];
+    }
+  }
+
+  // 最後の範囲を追加
+  ranges.push({ start: start, end: end });
+
+  return ranges;
+}
+
+function filterUSOnly() {
+  const startTime = new Date().getTime();
+  let originalRowCount = 0;
+  let filteredRowCount = 0;
+
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const SHEET_NAMES = EbayTool.getConfig().SHEET_NAMES;
+
+    const importSheet = ss.getSheetByName(SHEET_NAMES.IMPORT);
+
+    if (!importSheet) {
+      return { success: false, message: 'インポートデータが見つかりません。先にCSVをインポートしてください。' };
+    }
+
+    // データを取得
+    const lastRow = importSheet.getLastRow();
+    const lastCol = importSheet.getLastColumn();
+
+    if (lastRow <= 1) {
+      return { success: true, message: 'データが見つかりません。' };
+    }
+
+    // ヘッダーを取得してサイト列を特定
+    const headers = importSheet.getRange(1, 1, 1, lastCol).getValues()[0];
+    const headersLower = headers.map(h => String(h).toLowerCase().replace(/\s+/g, ''));
+
+    // AA列（リスティングサイト）を探す
+    let listingSiteIndex = -1;
+    for (let i = 0; i < headers.length; i++) {
+      const headerLower = headersLower[i];
+      if (headerLower.includes('site') || headerLower.includes('listing') || i === 26) { // AA列は26番目（0ベース）
+        listingSiteIndex = i;
+        break;
+      }
+    }
+
+    if (listingSiteIndex === -1) {
+      return { success: false, message: 'リスティングサイト列（AA列）が見つかりません。' };
+    }
+
+    console.log(`🚀 [${new Date().toLocaleTimeString()}] 高速US絞り込み開始: 列${listingSiteIndex + 1} (${headers[listingSiteIndex]})`);
+    console.log(`📊 処理対象: ${lastRow - 1}行のデータ`);
+    originalRowCount = lastRow - 1;
+
+    // 一括削除方式による最適化処理
+    try {
+      console.log(`📖 [${new Date().toLocaleTimeString()}] データ読み込み開始: ${lastRow}行 × ${lastCol}列`);
+
+      // 1. 全データを一度だけ読み込み
+      const allData = importSheet.getRange(1, 1, lastRow, lastCol).getValues();
+
+      console.log(`🔍 [${new Date().toLocaleTimeString()}] 削除対象行を特定中...`);
+
+      // 2. 削除対象行を特定
+      const rowsToDelete = [];
+      for (let i = 1; i < allData.length; i++) { // ヘッダー行をスキップ
+        const siteValue = String(allData[i][listingSiteIndex]).trim().toUpperCase();
+        if (siteValue && siteValue !== 'US' && siteValue !== 'USA' && siteValue !== 'UNITED STATES') {
+          rowsToDelete.push(i + 1); // 1ベース行番号
+        }
+      }
+
+      console.log(`🎯 削除対象特定完了: ${rowsToDelete.length}行を削除予定`);
+
+      // 7. 連続行範囲の一括削除（超高速化）
+      if (rowsToDelete.length > 0) {
+        console.log(`📋 [${new Date().toLocaleTimeString()}] ${rowsToDelete.length}行を一括削除開始...`);
+
+        // 連続する行範囲をグループ化
+        const ranges = groupConsecutiveRows(rowsToDelete);
+        console.log(`📦 連続行範囲: ${ranges.length}グループに分割`);
+
+        // 下から上へ一括削除（範囲ごと）
+        for (let i = ranges.length - 1; i >= 0; i--) {
+          const range = ranges[i];
+          const rowCount = range.end - range.start + 1;
+
+          console.log(`🗑️  範囲削除: ${range.start}-${range.end}行 (${rowCount}行)`);
+
+          // 一括削除実行
+          importSheet.deleteRows(range.start, rowCount);
+
+          // 大量削除時は小休憩
+          if (rowCount > 1000) {
+            Utilities.sleep(50);
+          }
+        }
+
+        console.log(`✅ [${new Date().toLocaleTimeString()}] 一括削除完了: ${rowsToDelete.length}行削除`);
+      }
+
+      // 8. 結果を計算
+      const newLastRow = importSheet.getLastRow();
+      filteredRowCount = newLastRow - 1;
+      const deletedCount = originalRowCount - filteredRowCount;
+
+      const elapsedSeconds = ((new Date().getTime() - startTime) / 1000).toFixed(1);
+      console.log(`✅ [${new Date().toLocaleTimeString()}] US絞り込み完了: ${originalRowCount} → ${filteredRowCount} (${deletedCount}行削除) - ${elapsedSeconds}秒`);
+
+      // 成功ログを記録
+      logPerformance('US絞り込み', startTime, new Date().getTime(), {
+        success: true,
+        dataRows: filteredRowCount,
+        elapsedSeconds: parseFloat(elapsedSeconds),
+        additionalInfo: {
+          originalRows: originalRowCount,
+          filteredRows: filteredRowCount,
+          deletedRows: deletedCount,
+          method: '一括削除方式',
+          rangeGroups: rowsToDelete.length > 0 ? groupConsecutiveRows(rowsToDelete).length : 0
+        }
+      });
+
+      return {
+        success: true,
+        message: `US絞り込み完了: ${originalRowCount}件 → ${filteredRowCount}件 (${deletedCount}行削除)`,
+        originalCount: originalRowCount,
+        filteredCount: filteredRowCount,
+        deletedCount: deletedCount
+      };
+
+    } catch (filterError) {
+      console.warn('フィルター方式でエラー発生、従来方式にフォールバック:', filterError);
+
+      // フォールバック: 従来の方式
+      const allData = importSheet.getRange(1, 1, lastRow, lastCol).getValues();
+      const rowsToDelete = [];
+
+      for (let i = 1; i < allData.length; i++) {
+        const siteValue = String(allData[i][listingSiteIndex]).trim().toUpperCase();
+        if (siteValue && siteValue !== 'US' && siteValue !== 'USA' && siteValue !== 'UNITED STATES') {
+          rowsToDelete.push(i + 1);
+        }
+      }
+
+      // 下から上へ削除
+      for (let i = rowsToDelete.length - 1; i >= 0; i--) {
+        importSheet.deleteRow(rowsToDelete[i]);
+      }
+
+      const newLastRow = importSheet.getLastRow();
+      const filteredRowCount = newLastRow - 1;
+      const deletedCount = originalRowCount - filteredRowCount;
+
+      return {
+        success: true,
+        message: `US絞り込み完了: ${originalRowCount}件 → ${filteredRowCount}件 (${deletedCount}行削除)`,
+        originalCount: originalRowCount,
+        filteredCount: filteredRowCount,
+        deletedCount: deletedCount
+      };
+    }
+
+  } catch (error) {
+    logError('filterUSOnly', error, 'US絞り込み処理中');
     SpreadsheetApp.getUi().alert(
       'エラー',
-      getFriendlyErrorMessage(error, '重複検出中にエラーが発生しました。'),
+      getFriendlyErrorMessage(error, 'US絞り込み中にエラーが発生しました。'),
       SpreadsheetApp.getUi().ButtonSet.OK
     );
+
+    return {
+      success: false,
+      message: getFriendlyErrorMessage(error, 'US絞り込み中にエラーが発生しました。'),
+      stack: error.stack
+    };
+  }
+}
+
+/**
+ * アプリケーションの状態をチェックする関数
+ * @return {Object} アプリケーションの状態情報
+ */
+function checkAppState() {
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const SHEET_NAMES = EbayTool.getConfig().SHEET_NAMES;
     
-    return { 
-      success: false, 
-      message: getFriendlyErrorMessage(error, '重複検出中にエラーが発生しました。'), 
-      stack: error.stack 
+    // 各シートの存在確認
+    const importSheet = ss.getSheetByName(SHEET_NAMES.IMPORT);
+    const duplicateSheet = ss.getSheetByName(SHEET_NAMES.DUPLICATES);
+    const exportSheet = ss.getSheetByName(SHEET_NAMES.EXPORT);
+    
+    const state = {
+      hasImportSheet: importSheet !== null,
+      hasDuplicateSheet: duplicateSheet !== null,
+      hasExportSheet: exportSheet !== null,
+      stats: {}
+    };
+    
+    // インポートデータの統計
+    if (importSheet) {
+      const lastRow = importSheet.getLastRow();
+      if (lastRow > 1) {
+        state.stats.rowCount = lastRow - 1; // ヘッダーを除く
+      }
+    }
+    
+    // 重複データの統計
+    if (duplicateSheet) {
+      const lastRow = duplicateSheet.getLastRow();
+      if (lastRow > 1) {
+        // 重複グループの数を計算
+        const groupData = duplicateSheet.getRange(2, 1, lastRow - 1, 1).getValues();
+        const uniqueGroups = new Set();
+        let totalItems = 0;
+        
+        groupData.forEach(row => {
+          const groupId = row[0];
+          if (groupId) {
+            uniqueGroups.add(groupId);
+            totalItems++;
+          }
+        });
+        
+        state.stats.duplicateGroups = uniqueGroups.size;
+        state.stats.duplicateItems = totalItems;
+      }
+    }
+    
+    // エクスポートデータの統計
+    if (exportSheet) {
+      const lastRow = exportSheet.getLastRow();
+      if (lastRow > 1) {
+        state.stats.exportCount = lastRow - 1;
+      }
+    }
+    
+    return state;
+    
+  } catch (error) {
+    logError('checkAppState', error, 'アプリ状態確認中');
+    return {
+      hasImportSheet: false,
+      hasDuplicateSheet: false,
+      hasExportSheet: false,
+      stats: {},
+      error: getFriendlyErrorMessage(error, 'アプリ状態確認中にエラーが発生しました。')
     };
   }
 }
@@ -1439,10 +2231,22 @@ function convertToCSVDownload(data, fileName) {
 function downloadExportCsv() {
   try {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const exportSheet = ss.getSheetByName(EbayTool.getSheetName('EXPORT'));
-    
+    let exportSheet = ss.getSheetByName(EbayTool.getSheetName('EXPORT'));
+
+    // エクスポートシートが存在しない場合は先に生成する
     if (!exportSheet) {
-      throw new Error('エクスポートシートが見つかりません。先にエクスポートを実行してください。');
+      console.log('エクスポートシートが見つかりません。generateExportCsvを実行します。');
+      const generateResult = generateExportCsv();
+
+      if (!generateResult.success) {
+        return generateResult;
+      }
+
+      // 生成後に再取得
+      exportSheet = ss.getSheetByName(EbayTool.getSheetName('EXPORT'));
+      if (!exportSheet) {
+        throw new Error('エクスポートシートの生成に失敗しました。');
+      }
     }
     
     const data = exportSheet.getDataRange().getValues();
@@ -2163,11 +2967,31 @@ function generateExportCsv() {
     
     // 終了対象のアイテムを抽出（バッチ処理）- EndCode列を追加
     const exportData = [];
+
+    // デバッグ情報を出力
+    console.log(`*** generateExportCsv デバッグ ***`);
+    console.log(`処理列インデックス: ${actionIndex}, ItemID列インデックス: ${itemIdIndex}`);
+    console.log(`データ行数: ${actionValues.length}`);
+    console.log(`最初の5行の処理値:`, actionValues.slice(0, 5).map(row => `"${row[0]}"`));
+
+    let endCount = 0;
     for (let i = 0; i < actionValues.length; i++) {
-      if (actionValues[i][0] === '終了' && itemIdValues[i][0]) {
-        exportData.push(['End', itemIdValues[i][0], 'OtherListingError']);
+      const actionValue = actionValues[i][0];
+      const itemIdValue = itemIdValues[i][0];
+
+      if (actionValue === '終了' && itemIdValue) {
+        exportData.push(['End', itemIdValue, 'OtherListingError']);
+        endCount++;
+      }
+
+      // 最初の10行をデバッグ出力
+      if (i < 10) {
+        console.log(`行${i+2}: 処理="${actionValue}" ItemID="${itemIdValue}" 判定=${actionValue === '終了' && itemIdValue ? 'エクスポート対象' : 'スキップ'}`);
       }
     }
+
+    console.log(`終了対象として抽出されたアイテム数: ${endCount}`);
+    console.log(`*** generateExportCsv デバッグ終了 ***`);
     
     if (exportData.length === 0) {
       // 終了対象のアイテムが0件の場合は正常完了として処理
@@ -2949,6 +3773,89 @@ function logError(functionName, error, context = '') {
 }
 
 /**
+ * 性能ログを記録する関数
+ * @param {string} operation - 操作名
+ * @param {number} startTime - 開始時刻
+ * @param {number} endTime - 終了時刻
+ * @param {Object} details - 詳細情報
+ */
+function logPerformance(operation, startTime, endTime, details = {}) {
+  try {
+    console.log(`性能ログ記録開始: ${operation}`);
+    const duration = endTime - startTime;
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheetName = EbayTool.getConfig().SHEET_NAMES.PERFORMANCE;
+    console.log(`性能ログシート名: ${sheetName}`);
+    let perfSheet = ss.getSheetByName(sheetName);
+
+    if (!perfSheet) {
+      // 性能ログシートを作成
+      perfSheet = ss.insertSheet(EbayTool.getConfig().SHEET_NAMES.PERFORMANCE);
+
+      // ヘッダーを設定
+      const headers = [
+        '実行日時', '操作名', '処理時間(秒)', '処理時間(ミリ秒)',
+        'データ行数', 'ファイルサイズ(MB)', '成功/失敗', 'エラーメッセージ', '詳細'
+      ];
+      perfSheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+
+      // ヘッダーの書式設定
+      perfSheet.getRange(1, 1, 1, headers.length)
+        .setBackground(EbayTool.getColor('PRIMARY'))
+        .setFontColor('white')
+        .setFontWeight('bold');
+
+      // 列幅を調整
+      perfSheet.setColumnWidth(1, 150); // 実行日時
+      perfSheet.setColumnWidth(2, 120); // 操作名
+      perfSheet.setColumnWidth(3, 100); // 処理時間(秒)
+      perfSheet.setColumnWidth(4, 120); // 処理時間(ミリ秒)
+      perfSheet.setColumnWidth(8, 200); // エラーメッセージ
+      perfSheet.setColumnWidth(9, 300); // 詳細
+
+      perfSheet.setFrozenRows(1);
+    }
+
+    // ログデータを準備
+    const logData = [
+      new Date(),                                          // 実行日時
+      operation,                                           // 操作名
+      Math.round(duration / 1000 * 100) / 100,           // 処理時間(秒)
+      duration,                                           // 処理時間(ミリ秒)
+      details.dataRows || '',                             // データ行数
+      details.fileSizeMB || '',                           // ファイルサイズ(MB)
+      details.success ? '成功' : '失敗',                   // 成功/失敗
+      details.errorMessage || '',                         // エラーメッセージ
+      JSON.stringify(details.additionalInfo || {})       // 詳細
+    ];
+
+    // ログを追加
+    const lastRow = perfSheet.getLastRow();
+    perfSheet.getRange(lastRow + 1, 1, 1, logData.length).setValues([logData]);
+
+    // 行の色分け（成功=緑、失敗=赤）
+    const logRow = perfSheet.getRange(lastRow + 1, 1, 1, logData.length);
+    if (details.success) {
+      logRow.setBackground('#F0FDF4'); // 薄い緑
+    } else {
+      logRow.setBackground('#FEF2F2'); // 薄い赤
+    }
+
+    console.log(`性能ログ記録: ${operation} - ${Math.round(duration/1000*100)/100}秒`);
+
+    // 古いログの削除（500行を超えた場合）
+    if (lastRow > 500) {
+      const deleteCount = lastRow - 500;
+      perfSheet.deleteRows(2, deleteCount); // ヘッダーを除いて削除
+    }
+
+  } catch (error) {
+    console.error('性能ログ記録エラー:', error);
+    // エラーがあってもメイン処理に影響させない
+  }
+}
+
+/**
  * ユーザーにわかりやすいエラーメッセージを生成する関数
  * @param {Error} error - エラーオブジェクト
  * @param {string} defaultMessage - デフォルトのエラーメッセージ
@@ -2985,6 +3892,1222 @@ function getFriendlyErrorMessage(error, defaultMessage = 'エラーが発生し�
     // エラーメッセージ生成中のエラーは無視
     console.error('getFriendlyErrorMessage関数内でエラー:', e);
     return defaultMessage;
+  }
+}
+
+/**
+ * 分割処理マネージャー - タイムアウト対策
+ */
+var ChunkedProcessor = {
+  // メモリ内状態ストレージ
+  memoryStorage: {},
+  /**
+   * 処理状態を保存（強化版）
+   */
+  saveState: function(processId, state) {
+    try {
+      const stateData = {
+        ...state,
+        lastUpdated: new Date().getTime(),
+        backupCount: (state.backupCount || 0) + 1
+      };
+      
+      // まずメモリに保存
+      this.memoryStorage[processId] = stateData;
+      console.log(`メモリ内状態保存成功: ${processId} (バックアップ${stateData.backupCount}回目)`);
+      
+      // CacheServiceにもバックアップ保存を試行
+      try {
+        const cache = CacheService.getScriptCache();
+        cache.put(`process_${processId}`, JSON.stringify(stateData), 3600); // 1時間
+        console.log(`キャッシュ状態保存成功: ${processId}`);
+      } catch (cacheError) {
+        console.warn('キャッシュ保存失敗（メモリ保存は成功）:', cacheError.message);
+      }
+      
+      // シートにも永続化保存を試行（新機能）
+      try {
+        this.saveStateToSheet(processId, stateData);
+        console.log(`シート状態保存完了: ${processId}`);
+      } catch (sheetError) {
+        console.error('シート保存失敗:', sheetError.message);
+        console.error('シート保存エラー詳細:', sheetError);
+      }
+      
+      return true;
+    } catch (error) {
+      console.error('処理状態保存エラー:', error);
+      return false;
+    }
+  },
+  
+  /**
+   * 処理状態をシートに保存
+   */
+  saveStateToSheet: function(processId, stateData) {
+    try {
+      const ss = SpreadsheetApp.getActiveSpreadsheet();
+      let stateSheet = ss.getSheetByName(EbayTool.getSheetName('PROCESS_STATE'));
+      
+      if (!stateSheet) {
+        stateSheet = ss.insertSheet(EbayTool.getSheetName('PROCESS_STATE'));
+        // ヘッダー設定
+        stateSheet.getRange(1, 1, 1, 3).setValues([['ProcessID', 'State', 'LastUpdated']]);
+      }
+      
+      // 既存の状態を検索
+      const lastRow = stateSheet.getLastRow();
+      let targetRow = -1;
+      
+      if (lastRow > 1) {
+        const processIds = stateSheet.getRange(2, 1, lastRow - 1, 1).getValues();
+        for (let i = 0; i < processIds.length; i++) {
+          if (processIds[i][0] === processId) {
+            targetRow = i + 2;
+            break;
+          }
+        }
+      }
+      
+      // データの保存
+      const rowData = [processId, JSON.stringify(stateData), new Date().getTime()];
+      if (targetRow !== -1) {
+        // 更新
+        stateSheet.getRange(targetRow, 1, 1, 3).setValues([rowData]);
+      } else {
+        // 新規追加
+        stateSheet.getRange(lastRow + 1, 1, 1, 3).setValues([rowData]);
+      }
+      
+      console.log(`シート状態保存成功: ${processId}`);
+    } catch (error) {
+      throw new Error(`シート保存エラー: ${error.message}`);
+    }
+  },
+  
+  /**
+   * 処理状態を取得（強化版）
+   */
+  getState: function(processId) {
+    try {
+      console.log(`状態取得開始: ${processId} - メモリ内状態数: ${Object.keys(this.memoryStorage).length}`);
+      
+      // まずメモリから取得を試行
+      if (this.memoryStorage[processId]) {
+        console.log(`メモリ内状態取得成功: ${processId}`);
+        return this.memoryStorage[processId];
+      }
+      console.log(`メモリ内に状態なし: ${processId}`);
+      
+      // メモリにない場合はキャッシュから取得を試行
+      try {
+        const cache = CacheService.getScriptCache();
+        const stateJson = cache.get(`process_${processId}`);
+        if (stateJson) {
+          const state = JSON.parse(stateJson);
+          // メモリにも復元
+          this.memoryStorage[processId] = state;
+          console.log(`キャッシュ状態取得成功: ${processId}`);
+          return state;
+        }
+      } catch (cacheError) {
+        console.warn('キャッシュ取得失敗:', cacheError.message);
+      }
+      
+      // キャッシュにもない場合はシートから取得を試行（新機能）
+      try {
+        console.log(`シートから状態取得を試行: ${processId}`);
+        const sheetState = this.getStateFromSheet(processId);
+        if (sheetState) {
+          console.log(`シート状態発見: ${processId}`);
+          // メモリとキャッシュにも復元
+          this.memoryStorage[processId] = sheetState;
+          try {
+            const cache = CacheService.getScriptCache();
+            cache.put(`process_${processId}`, JSON.stringify(sheetState), 3600);
+            console.log(`キャッシュに復元: ${processId}`);
+          } catch (cacheError) {
+            console.warn('キャッシュ復元失敗:', cacheError.message);
+          }
+          console.log(`シート状態取得成功: ${processId}`);
+          return sheetState;
+        } else {
+          console.log(`シートにも状態なし: ${processId}`);
+        }
+      } catch (sheetError) {
+        console.error('シート取得失敗:', sheetError.message);
+        console.error('シート取得エラー詳細:', sheetError);
+      }
+      
+      console.log(`処理状態が見つかりません: ${processId}`);
+      return null;
+    } catch (error) {
+      console.error('処理状態取得エラー:', error);
+      return null;
+    }
+  },
+  
+  /**
+   * 処理状態をシートから取得
+   */
+  getStateFromSheet: function(processId) {
+    try {
+      console.log(`シートから状態を検索開始: ${processId}`);
+      const ss = SpreadsheetApp.getActiveSpreadsheet();
+      const stateSheet = ss.getSheetByName(EbayTool.getSheetName('PROCESS_STATE'));
+      
+      if (!stateSheet) {
+        console.log(`処理状態シートが存在しません`);
+        return null;
+      }
+      
+      const lastRow = stateSheet.getLastRow();
+      console.log(`処理状態シートの行数: ${lastRow}`);
+      if (lastRow <= 1) {
+        console.log(`処理状態シートにデータなし`);
+        return null;
+      }
+      
+      // プロセスIDを検索
+      const data = stateSheet.getRange(2, 1, lastRow - 1, 3).getValues();
+      console.log(`シートデータ行数: ${data.length}`);
+      for (let i = 0; i < data.length; i++) {
+        console.log(`行${i + 2}: ID="${data[i][0]}" vs "${processId}"`);
+        if (data[i][0] === processId) {
+          const stateJson = data[i][1];
+          console.log(`状態データ発見: ${processId}`);
+          return JSON.parse(stateJson);
+        }
+      }
+      
+      console.log(`シートに該当する状態データなし: ${processId}`);
+      return null;
+    } catch (error) {
+      console.error(`シート取得エラー詳細:`, error);
+      throw new Error(`シート取得エラー: ${error.message}`);
+    }
+  },
+  
+  /**
+   * 処理状態をクリア
+   */
+  clearState: function(processId) {
+    try {
+      // メモリから削除
+      if (this.memoryStorage[processId]) {
+        delete this.memoryStorage[processId];
+        console.log(`メモリ内状態クリア: ${processId}`);
+      }
+      
+      // キャッシュからも削除を試行
+      try {
+        const cache = CacheService.getScriptCache();
+        cache.remove(`process_${processId}`);
+        console.log(`キャッシュ状態クリア: ${processId}`);
+      } catch (cacheError) {
+        console.warn('キャッシュクリア失敗:', cacheError.message);
+      }
+      
+      return true;
+    } catch (error) {
+      console.error('処理状態クリアエラー:', error);
+      return false;
+    }
+  },
+  
+  /**
+   * 実行時間をチェック
+   */
+  checkExecutionTime: function(startTime, maxTime = 330000) {
+    const elapsed = new Date().getTime() - startTime;
+    const remaining = maxTime - elapsed;
+    const safetyMargin = 60000; // 60秒（安全マージン拡張）
+    return {
+      elapsed: elapsed,
+      remaining: remaining,
+      shouldStop: remaining < safetyMargin,
+      progress: Math.min(100, (elapsed / maxTime) * 100)
+    };
+  },
+  
+  /**
+   * 分割された自動処理を開始
+   */
+  startChunkedAutoProcess: function(csvData) {
+    const processId = `auto_process_${new Date().getTime()}`;
+    const startTime = new Date().getTime();
+    
+    console.log(`*** CHUNKED PROCESSOR DEBUG START ***`);
+    console.log(`処理ID生成: ${processId}`);
+    console.log(`開始時刻: ${startTime}`);
+    console.log(`CSVデータサイズ: ${csvData ? csvData.length : 'null'}`);
+    
+    try {
+      // 初期状態を設定
+      const initialState = {
+        processId: processId,
+        phase: 'import',
+        startTime: startTime,
+        csvData: csvData,
+        totalPhases: 4,
+        currentPhase: 1,
+        completed: false,
+        error: null,
+        result: {
+          success: false,
+          steps: [],
+          currentStep: '',
+          stats: {},
+          startTime: startTime
+        }
+      };
+      
+      console.log(`分割処理初期化: ${processId}`);
+      console.log(`初期状態オブジェクト作成完了`);
+      console.log(`*** 状態保存を実行します ***`);
+      const saveResult = this.saveState(processId, initialState);
+      console.log(`状態保存結果: ${saveResult}`);
+      if (!saveResult) {
+        throw new Error('初期状態の保存に失敗しました');
+      }
+      console.log(`初期状態保存成功: ${processId}`);
+      
+      // 最初のフェーズを実行
+      console.log(`*** executeNextPhaseを呼び出します ***`);
+      return this.executeNextPhase(processId);
+      
+    } catch (error) {
+      console.error('分割自動処理開始エラー:', error);
+      return {
+        success: false,
+        message: `処理開始に失敗しました: ${error.message}`,
+        processId: processId
+      };
+    }
+  },
+  
+  /**
+   * 次のフェーズを実行
+   */
+  executeNextPhase: function(processId) {
+    const startTime = new Date().getTime();
+    const state = this.getState(processId);
+    
+    console.log(`executeNextPhase実行: ${processId}`);
+    if (!state) {
+      console.error(`状態取得失敗: ${processId}`);
+      return {
+        success: false,
+        message: '処理状態が見つかりません',
+        processId: processId
+      };
+    }
+    console.log(`状態取得成功: ${processId}, フェーズ: ${state.phase}`);
+    
+    try {
+      let phaseResult = null;
+      
+      switch (state.phase) {
+        case 'import':
+          phaseResult = this.executeImportPhase(state, startTime);
+          break;
+        case 'detect':
+          phaseResult = this.executeDetectPhase(state, startTime);
+          break;
+        case 'analyze':
+          phaseResult = this.executeAnalyzePhase(state, startTime);
+          break;
+        case 'export':
+          phaseResult = this.executeExportPhase(state, startTime);
+          break;
+        case 'completed':
+          return {
+            success: true,
+            message: '全ての処理が完了しました',
+            completed: true,
+            processId: processId,
+            result: state.result
+          };
+        default:
+          throw new Error(`未知のフェーズ: ${state.phase}`);
+      }
+      
+      // 実行時間をチェック
+      const timeCheck = this.checkExecutionTime(startTime);
+      
+      if (timeCheck.shouldStop && !phaseResult.completed) {
+        // タイムアウト前に処理を一時停止
+        console.log(`時間制限に近づいたため処理を一時停止: ${timeCheck.elapsed}ms経過`);
+        return {
+          success: true,
+          message: `処理を一時停止しました (フェーズ: ${state.phase})`,
+          processId: processId,
+          paused: true,
+          progress: Math.round((state.currentPhase / state.totalPhases) * 100)
+        };
+      }
+      
+      if (phaseResult.completed) {
+        // 現在のフェーズが完了
+        state.currentPhase++;
+        state.result.steps.push(phaseResult.step);
+        
+        if (state.currentPhase > state.totalPhases) {
+          // 全フェーズ完了
+          state.phase = 'completed';
+          state.completed = true;
+          state.result.success = true;
+          state.result.finalMessage = phaseResult.finalMessage || '全ての処理が正常に完了しました';
+        } else {
+          // 次のフェーズに進む
+          const phases = ['import', 'detect', 'analyze', 'export'];
+          state.phase = phases[state.currentPhase - 1];
+        }
+        
+        this.saveState(processId, state);
+        
+        if (state.completed) {
+          this.clearState(processId);
+          return {
+            success: true,
+            message: '全ての処理が完了しました',
+            completed: true,
+            processId: processId,
+            result: state.result
+          };
+        }
+        
+        // 次のフェーズを即座に開始（時間が許せば）
+        if (!timeCheck.shouldStop) {
+          return this.executeNextPhase(processId);
+        }
+      }
+      
+      return {
+        success: true,
+        message: `フェーズ「${state.phase}」を実行中`,
+        processId: processId,
+        progress: Math.round((state.currentPhase / state.totalPhases) * 100)
+      };
+      
+    } catch (error) {
+      console.error(`フェーズ実行エラー (${state.phase}):`, error);
+      state.error = error.message;
+      this.saveState(processId, state);
+      
+      return {
+        success: false,
+        message: `処理中にエラーが発生しました: ${error.message}`,
+        processId: processId,
+        error: error
+      };
+    }
+  },
+  
+  /**
+   * インポートフェーズを実行
+   */
+  executeImportPhase: function(state, startTime) {
+    console.log('インポートフェーズ開始');
+    
+    try {
+      const importResult = importCsvData(state.csvData);
+      
+      return {
+        completed: true,
+        step: {
+          name: 'import',
+          success: importResult.success,
+          message: importResult.message,
+          progressDetail: `${importResult.rowCount || 0}件のデータをインポートしました`
+        },
+        finalMessage: importResult.success ? null : "CSVインポートに失敗したため、処理を中止しました。"
+      };
+    } catch (error) {
+      throw new Error(`インポートフェーズでエラー: ${error.message}`);
+    }
+  },
+  
+  /**
+   * 重複検出フェーズを実行（マイクロチャンク対応）
+   */
+  executeDetectPhase: function(state, startTime) {
+    console.log('重複検出フェーズ開始（マイクロチャンク処理）');
+    
+    try {
+      // チャンク処理状態の初期化
+      if (!state.detectState) {
+        state.detectState = {
+          chunkSize: 800, // さらに縮小（1500→800）
+          processedRows: 0,
+          totalRows: 0,
+          duplicateGroups: 0,
+          completed: false
+        };
+      }
+      
+      const timeCheck = this.checkExecutionTime(startTime);
+      
+      // マイクロチャンク重複検出を実行
+      const chunkResult = this.executeDetectChunk(state, startTime);
+      
+      if (chunkResult.shouldPause) {
+        // 時間制限により一時停止
+        this.saveState(state.processId, state);
+        return {
+          completed: false,
+          paused: true,
+          step: {
+            name: 'detect',
+            success: true,
+            message: `重複検出中（${state.detectState.processedRows}/${state.detectState.totalRows}行処理済み）`,
+            progressDetail: `進捗: ${Math.round((state.detectState.processedRows / state.detectState.totalRows) * 100)}%`
+          }
+        };
+      }
+      
+      if (chunkResult.completed) {
+        // 重複検出完了
+        return {
+          completed: true,
+          step: {
+            name: 'detect',
+            success: chunkResult.success,
+            message: chunkResult.message,
+            progressDetail: chunkResult.success ? 
+              `${chunkResult.duplicateGroups || 0}件の重複グループを検出しました` : 
+              '重複検出に失敗しました'
+          },
+          finalMessage: chunkResult.success ? null : "重複検出に失敗したため、処理を中止しました。"
+        };
+      }
+      
+      // 継続処理
+      return {
+        completed: false,
+        step: {
+          name: 'detect',
+          success: true,
+          message: `重複検出継続中（${state.detectState.processedRows}/${state.detectState.totalRows}行）`,
+          progressDetail: `進捗: ${Math.round((state.detectState.processedRows / state.detectState.totalRows) * 100)}%`
+        }
+      };
+      
+    } catch (error) {
+      throw new Error(`重複検出フェーズでエラー: ${error.message}`);
+    }
+  },
+
+  /**
+   * 重複検出のマイクロチャンク処理
+   */
+  executeDetectChunk: function(state, startTime) {
+    try {
+      const ss = SpreadsheetApp.getActiveSpreadsheet();
+      const importSheet = ss.getSheetByName(EbayTool.getSheetName('IMPORT'));
+      
+      if (!importSheet) {
+        return {
+          completed: true,
+          success: false,
+          message: 'インポートシートが見つかりません'
+        };
+      }
+      
+      // 初回実行時の初期化
+      if (state.detectState.totalRows === 0) {
+        const lastRow = importSheet.getLastRow();
+        state.detectState.totalRows = Math.max(0, lastRow - 1); // ヘッダー除く
+        state.detectState.processedRows = 0;
+        
+        if (state.detectState.totalRows === 0) {
+          return {
+            completed: true,
+            success: true,
+            message: '検出された重複: 0件。重複データはありませんでした。',
+            duplicateGroups: 0
+          };
+        }
+        
+        console.log(`重複検出開始: 総行数 ${state.detectState.totalRows}`);
+      }
+      
+      const chunkSize = state.detectState.chunkSize;
+      const startRow = state.detectState.processedRows + 2; // ヘッダー行+1から開始
+      const endRow = Math.min(startRow + chunkSize - 1, state.detectState.totalRows + 1);
+      const actualChunkSize = endRow - startRow + 1;
+      
+      if (actualChunkSize <= 0) {
+        // 全行処理完了
+        console.log(`重複検出完了: ${state.detectState.processedRows}行処理済み`);
+        return {
+          completed: true,
+          success: true,
+          message: `検出された重複: ${state.detectState.duplicateGroups}件の重複グループが見つかりました。`,
+          duplicateGroups: state.detectState.duplicateGroups
+        };
+      }
+      
+      console.log(`チャンク処理: ${startRow}-${endRow}行 (${actualChunkSize}行)`);
+      
+      // チャンクデータを取得して重複検出
+      const lastCol = importSheet.getLastColumn();
+      const chunkData = importSheet.getRange(startRow, 1, actualChunkSize, lastCol).getValues();
+      
+      // 簡易重複チェック（タイトル列での重複検出）
+      const titleColumnIndex = this.findTitleColumn(importSheet);
+      const duplicatesFound = this.findDuplicatesInChunk(chunkData, titleColumnIndex);
+      
+      state.detectState.duplicateGroups += duplicatesFound;
+      state.detectState.processedRows += actualChunkSize;
+      
+      // 実行時間チェック
+      const timeCheck = this.checkExecutionTime(startTime);
+      if (timeCheck.shouldStop) {
+        console.log('時間制限により一時停止');
+        return {
+          shouldPause: true
+        };
+      }
+      
+      // まだ処理が残っている場合は継続
+      if (state.detectState.processedRows < state.detectState.totalRows) {
+        return {
+          completed: false,
+          continuing: true
+        };
+      }
+      
+      // 全処理完了
+      return {
+        completed: true,
+        success: true,
+        message: `検出された重複: ${state.detectState.duplicateGroups}件の重複グループが見つかりました。`,
+        duplicateGroups: state.detectState.duplicateGroups
+      };
+      
+    } catch (error) {
+      console.error('チャンク処理エラー:', error);
+      throw new Error(`チャンク処理でエラー: ${error.message}`);
+    }
+  },
+  
+  /**
+   * タイトル列を見つける
+   */
+  findTitleColumn: function(sheet) {
+    try {
+      const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+      for (let i = 0; i < headers.length; i++) {
+        const header = String(headers[i]).toLowerCase();
+        if (header.includes('title') || header.includes('name') || header.includes('item name')) {
+          return i;
+        }
+      }
+      // デフォルトは3列目
+      return 3;
+    } catch (error) {
+      console.warn('タイトル列検出エラー:', error);
+      return 3;
+    }
+  },
+  
+  /**
+   * チャンク内での重複を検出
+   */
+  findDuplicatesInChunk: function(chunkData, titleIndex) {
+    try {
+      const titleCounts = {};
+      let duplicateGroups = 0;
+      
+      for (let i = 0; i < chunkData.length; i++) {
+        const title = String(chunkData[i][titleIndex] || '').trim();
+        if (title.length > 10) { // 最低10文字以上のタイトル
+          titleCounts[title] = (titleCounts[title] || 0) + 1;
+        }
+      }
+      
+      for (const title in titleCounts) {
+        if (titleCounts[title] > 1) {
+          duplicateGroups++;
+        }
+      }
+      
+      return duplicateGroups;
+    } catch (error) {
+      console.warn('チャンク重複検出エラー:', error);
+      return 0;
+    }
+  },
+  
+  /**
+   * 分析フェーズを実行
+   */
+  executeAnalyzePhase: function(state, startTime) {
+    console.log('分析フェーズ開始');
+    
+    try {
+      // 分析処理は省略してスキップ（重複検出が主要機能）
+      console.log('分析フェーズをスキップ（重複検出完了済み）');
+      
+      return {
+        completed: true,
+        step: {
+          name: 'analyze',
+          success: true,
+          message: '分析フェーズ完了（スキップ）',
+          progressDetail: '統計分析をスキップしました'
+        }
+      };
+    } catch (error) {
+      throw new Error(`分析フェーズでエラー: ${error.message}`);
+    }
+  },
+  
+  /**
+   * エクスポートフェーズを実行
+   */
+  executeExportPhase: function(state, startTime) {
+    console.log('エクスポートフェーズ開始');
+    
+    try {
+      const exportResult = generateExportCsv();
+      
+      return {
+        completed: true,
+        step: {
+          name: 'export',
+          success: exportResult.success,
+          message: exportResult.message,
+          progressDetail: exportResult.success ? 
+            'CSVエクスポートが完了しました' : 
+            'CSVエクスポートに失敗しました'
+        },
+        finalMessage: exportResult.success ? 
+          "処理が完了しました。重複データをCSVファイルとしてダウンロードしてください。" : 
+          "CSVエクスポートに失敗したため、処理を中止しました。"
+      };
+    } catch (error) {
+      throw new Error(`エクスポートフェーズでエラー: ${error.message}`);
+    }
+  }
+};
+
+/**
+ * インポートシートを初期化（クライアント側チャンクアップロード用）
+ */
+function initializeImportSheet() {
+  try {
+    console.log('*** SERVER DEBUG: initializeImportSheet called ***');
+    
+    const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+    const importSheetName = EbayTool.getSheetName('IMPORT');
+    
+    // インポートシートを取得または作成
+    let importSheet;
+    try {
+      importSheet = spreadsheet.getSheetByName(importSheetName);
+      if (!importSheet) {
+        importSheet = spreadsheet.insertSheet(importSheetName);
+      } else {
+        importSheet.clear(); // 既存データをクリア
+      }
+    } catch (e) {
+      importSheet = spreadsheet.insertSheet(importSheetName);
+    }
+    
+    console.log('*** SERVER DEBUG: Import sheet initialized successfully ***');
+    return { success: true, message: 'インポートシートを初期化しました' };
+    
+  } catch (error) {
+    console.error('initializeImportSheet エラー:', error);
+    return {
+      success: false,
+      message: `インポートシート初期化に失敗しました: ${error.message}`
+    };
+  }
+}
+
+/**
+ * CSVチャンクをインポートシートに追加
+ */
+function appendCsvChunkToImportSheet(chunkCsv, chunkIndex, totalChunks) {
+  try {
+    console.log(`*** SERVER DEBUG: appendCsvChunkToImportSheet called - chunk ${chunkIndex + 1}/${totalChunks} ***`);
+    console.log(`*** SERVER DEBUG: Chunk size: ${chunkCsv.length} characters ***`);
+    
+    if (!chunkCsv || chunkCsv.trim() === '') {
+      console.log('*** SERVER DEBUG: Empty chunk, skipping ***');
+      return { success: true, message: '空のチャンクをスキップしました' };
+    }
+    
+    const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+    const importSheetName = EbayTool.getSheetName('IMPORT');
+    const importSheet = spreadsheet.getSheetByName(importSheetName);
+    
+    if (!importSheet) {
+      return { success: false, message: 'インポートシートが見つかりません' };
+    }
+    
+    // チャンクCSVを行に分割して解析
+    const lines = chunkCsv.split('\n').filter(line => line.trim() !== '');
+    console.log(`*** SERVER DEBUG: Processing ${lines.length} lines ***`);
+    
+    if (lines.length === 0) {
+      console.log('*** SERVER DEBUG: No valid lines in chunk ***');
+      return { success: true, message: '有効な行がありません' };
+    }
+    
+    // 各行をCSV解析
+    const rows = [];
+    let columnCount = 0;
+    
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+      if (!line) continue;
+      
+      try {
+        // 簡易CSV行解析
+        const row = line.split(',').map(cell => {
+          let cleanCell = cell.trim();
+          if (cleanCell.startsWith('"') && cleanCell.endsWith('"')) {
+            cleanCell = cleanCell.slice(1, -1).replace(/""/g, '"');
+          }
+          return cleanCell;
+        });
+        
+        // 最初の行（全体のヘッダー行 or チャンクの最初の行）で列数を確定
+        if (columnCount === 0) {
+          columnCount = row.length;
+          console.log(`*** SERVER DEBUG: Column count set to ${columnCount} ***`);
+        }
+        
+        // 列数を統一
+        while (row.length < columnCount) {
+          row.push('');
+        }
+        if (row.length > columnCount) {
+          row.splice(columnCount);
+        }
+        
+        rows.push(row);
+        
+      } catch (parseError) {
+        console.warn(`*** SERVER DEBUG: Skipping malformed line in chunk: ${parseError.message} ***`);
+        continue;
+      }
+    }
+    
+    if (rows.length === 0) {
+      console.log('*** SERVER DEBUG: No valid rows after parsing ***');
+      return { success: true, message: '解析後に有効な行がありません' };
+    }
+    
+    // インポートシートの現在の最終行を取得
+    const currentLastRow = importSheet.getLastRow();
+    const startRow = currentLastRow + 1;
+    
+    // データを追加
+    const range = importSheet.getRange(startRow, 1, rows.length, columnCount);
+    range.setValues(rows);
+    
+    console.log(`*** SERVER DEBUG: Added ${rows.length} rows starting at row ${startRow} ***`);
+    
+    return { 
+      success: true, 
+      message: `チャンク ${chunkIndex + 1}/${totalChunks} を追加しました (${rows.length}行)`,
+      rowsAdded: rows.length,
+      totalRowsNow: currentLastRow + rows.length
+    };
+    
+  } catch (error) {
+    console.error('appendCsvChunkToImportSheet エラー:', error);
+    return {
+      success: false,
+      message: `チャンク追加に失敗しました: ${error.message}`
+    };
+  }
+}
+
+/**
+ * インポートシートから重複検出を開始
+ */
+function startDuplicateDetectionFromImportSheet() {
+  try {
+    console.log('*** SERVER DEBUG: startDuplicateDetectionFromImportSheet called ***');
+    
+    // 直接重複検出を実行
+    const detectResult = detectDuplicates();
+    console.log('*** SERVER DEBUG: Duplicate detection result:', detectResult);
+    
+    return {
+      success: true,
+      completed: true,
+      message: '重複検出が完了しました',
+      result: detectResult,
+      stats: {
+        duplicatesFound: detectResult?.duplicateCount || 0
+      }
+    };
+    
+  } catch (error) {
+    console.error('startDuplicateDetectionFromImportSheet エラー:', error);
+    return {
+      success: false,
+      message: `重複検出に失敗しました: ${error.message}`
+    };
+  }
+}
+
+/**
+ * 手作業インポート後の高速重複検出
+ */
+function executeFastDuplicateDetection() {
+  try {
+    const startTime = new Date().getTime();
+    console.log('*** SERVER DEBUG: executeFastDuplicateDetection called ***');
+    console.log('*** SERVER DEBUG: 高速重複検出開始時刻:', new Date(startTime).toLocaleString());
+    
+    const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+    const importSheetName = EbayTool.getSheetName('IMPORT');
+    const importSheet = spreadsheet.getSheetByName(importSheetName);
+    
+    if (!importSheet) {
+      return {
+        success: false,
+        message: 'インポートシートが見つかりません。まず手作業でCSVデータをインポートしてください。'
+      };
+    }
+    
+    const lastRow = importSheet.getLastRow();
+    if (lastRow <= 1) {
+      return {
+        success: false,
+        message: 'インポートシートにデータが見つかりません。手作業でCSVデータをインポートしてください。'
+      };
+    }
+    
+    console.log(`*** SERVER DEBUG: インポートシートに${lastRow}行のデータを発見 ***`);
+    
+    // 直接重複検出を実行（CSVアップロードをスキップ）
+    console.log('*** SERVER DEBUG: 重複検出を直接実行開始 ***');
+    const detectResult = detectDuplicates();
+    console.log('*** SERVER DEBUG: 重複検出完了:', detectResult);
+    
+    const endTime = new Date().getTime();
+    const processingTime = endTime - startTime;
+    console.log(`*** SERVER DEBUG: 処理時間: ${processingTime}ms (${Math.round(processingTime/1000)}秒) ***`);
+    
+    return {
+      success: true,
+      completed: true,
+      message: `高速重複検出が完了しました (処理時間: ${Math.round(processingTime/1000)}秒)`,
+      result: detectResult,
+      stats: {
+        totalRows: lastRow - 1, // ヘッダー行を除く
+        duplicatesFound: detectResult?.duplicateCount || 0,
+        processingTimeMs: processingTime,
+        processingTimeSeconds: Math.round(processingTime/1000)
+      },
+      processingTime: processingTime
+    };
+    
+  } catch (error) {
+    console.error('executeFastDuplicateDetection エラー:', error);
+    return {
+      success: false,
+      message: `高速重複検出に失敗しました: ${error.message}`
+    };
+  }
+}
+
+/**
+ * CSVデータを一時保存（大きなパラメータによるタイムアウト対策）
+ */
+function storeCsvDataForChunkedProcess(csvData) {
+  try {
+    console.log('*** SERVER DEBUG: storeCsvDataForChunkedProcess called ***');
+    console.log('*** SERVER DEBUG: csvData length:', csvData ? csvData.length : 'null');
+    
+    if (!csvData) {
+      return { success: false, message: 'CSVデータがありません' };
+    }
+    
+    // CSVデータをスプレッドシートに一時保存
+    const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+    
+    // 一時保存用のシートを作成または取得
+    let tempSheet;
+    try {
+      tempSheet = spreadsheet.getSheetByName('_TempCSV');
+      if (!tempSheet) {
+        tempSheet = spreadsheet.insertSheet('_TempCSV');
+      } else {
+        tempSheet.clear(); // 既存データをクリア
+      }
+    } catch (e) {
+      tempSheet = spreadsheet.insertSheet('_TempCSV');
+    }
+    
+    // 大きなCSVデータを一度に解析するとタイムアウトするため、行単位でストリーミング処理
+    console.log('*** SERVER DEBUG: Starting streaming CSV parse and save ***');
+    
+    // CSVデータを行単位に分割
+    const lines = csvData.split('\n');
+    console.log(`*** SERVER DEBUG: Split into ${lines.length} lines ***`);
+    
+    // バッチサイズを小さくしてタイムアウトを回避
+    const BATCH_SIZE = 500;
+    let totalRows = 0;
+    let batchRows = [];
+    let headerParsed = false;
+    let columnCount = 0;
+    
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+      if (!line) continue; // 空行をスキップ
+      
+      try {
+        // 簡易CSV行解析（カンマ区切り、引用符対応）
+        const row = line.split(',').map(cell => {
+          // 引用符で囲まれた値の処理
+          let cleanCell = cell.trim();
+          if (cleanCell.startsWith('"') && cleanCell.endsWith('"')) {
+            cleanCell = cleanCell.slice(1, -1).replace(/""/g, '"');
+          }
+          return cleanCell;
+        });
+        
+        // ヘッダー行で列数を確定
+        if (!headerParsed) {
+          columnCount = row.length;
+          headerParsed = true;
+          console.log(`*** SERVER DEBUG: Header parsed, ${columnCount} columns ***`);
+        }
+        
+        // 列数を統一（不足分は空文字で埋める）
+        while (row.length < columnCount) {
+          row.push('');
+        }
+        // 過多分は切り捨て
+        if (row.length > columnCount) {
+          row.splice(columnCount);
+        }
+        
+        batchRows.push(row);
+        
+        // バッチサイズに達したら保存
+        if (batchRows.length >= BATCH_SIZE) {
+          const startRow = totalRows + 1;
+          const range = tempSheet.getRange(startRow, 1, batchRows.length, columnCount);
+          range.setValues(batchRows);
+          totalRows += batchRows.length;
+          console.log(`*** SERVER DEBUG: Saved streaming batch, rows ${startRow}-${totalRows} ***`);
+          batchRows = []; // バッチをクリア
+        }
+        
+      } catch (parseError) {
+        console.warn(`*** SERVER DEBUG: Skipping malformed line ${i}: ${parseError.message} ***`);
+        continue;
+      }
+    }
+    
+    // 残りのバッチを保存
+    if (batchRows.length > 0) {
+      const startRow = totalRows + 1;
+      const range = tempSheet.getRange(startRow, 1, batchRows.length, columnCount);
+      range.setValues(batchRows);
+      totalRows += batchRows.length;
+      console.log(`*** SERVER DEBUG: Saved final streaming batch, rows ${startRow}-${totalRows} ***`);
+    }
+    
+    console.log(`*** SERVER DEBUG: CSV data stored successfully, total rows: ${totalRows} ***`);
+    return { 
+      success: true, 
+      message: `CSVデータを保存しました (${totalRows}行)`,
+      rowCount: totalRows 
+    };
+    
+  } catch (error) {
+    console.error('storeCsvDataForChunkedProcess エラー:', error);
+    return {
+      success: false,
+      message: `CSVデータ保存に失敗しました: ${error.message}`
+    };
+  }
+}
+
+/**
+ * 保存されたCSVデータから分割処理を開始
+ */
+function startChunkedAutoProcessFromStorage() {
+  try {
+    console.log('*** SERVER DEBUG: startChunkedAutoProcessFromStorage called ***');
+    
+    // 一時保存されたCSVデータを読み込み
+    const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+    const tempSheet = spreadsheet.getSheetByName('_TempCSV');
+    
+    if (!tempSheet) {
+      return {
+        success: false,
+        message: '一時保存されたCSVデータが見つかりません'
+      };
+    }
+    
+    const lastRow = tempSheet.getLastRow();
+    const lastCol = tempSheet.getLastColumn();
+    
+    if (lastRow === 0 || lastCol === 0) {
+      return {
+        success: false,
+        message: '保存されたCSVデータが空です'
+      };
+    }
+    
+    console.log(`*** SERVER DEBUG: Loading ${lastRow} rows, ${lastCol} columns from temp sheet ***`);
+    
+    // 大きなデータのCSV変換はタイムアウトするため、直接インポートシートに移行
+    console.log('*** SERVER DEBUG: Directly copying data to import sheet to avoid timeout ***');
+    
+    // インポートシートを取得または作成
+    const importSheetName = EbayTool.getSheetName('IMPORT');
+    let importSheet;
+    
+    try {
+      importSheet = spreadsheet.getSheetByName(importSheetName);
+      if (!importSheet) {
+        importSheet = spreadsheet.insertSheet(importSheetName);
+      } else {
+        importSheet.clear(); // 既存データをクリア
+      }
+    } catch (e) {
+      importSheet = spreadsheet.insertSheet(importSheetName);
+    }
+    
+    // 一時シートからインポートシートへ直接データをコピー（バッチ処理）
+    const BATCH_SIZE = 5000; // コピー用のバッチサイズ
+    let copiedRows = 0;
+    
+    for (let startRow = 1; startRow <= lastRow; startRow += BATCH_SIZE) {
+      const endRow = Math.min(startRow + BATCH_SIZE - 1, lastRow);
+      const batchSize = endRow - startRow + 1;
+      
+      console.log(`*** SERVER DEBUG: Copying batch ${startRow}-${endRow} (${batchSize} rows) ***`);
+      
+      // バッチデータを読み込み
+      const batchData = tempSheet.getRange(startRow, 1, batchSize, lastCol).getValues();
+      
+      // インポートシートに書き込み
+      const targetRange = importSheet.getRange(startRow, 1, batchSize, lastCol);
+      targetRange.setValues(batchData);
+      
+      copiedRows += batchSize;
+      console.log(`*** SERVER DEBUG: Copied ${copiedRows}/${lastRow} rows ***`);
+    }
+    
+    console.log('*** SERVER DEBUG: Data copied successfully, starting direct duplicate detection ***');
+    
+    // CSVを使わず、直接シート上で重複検出を実行
+    const detectResult = EbayTool.detectDuplicates();
+    console.log('*** SERVER DEBUG: Direct duplicate detection result:', detectResult);
+    
+    // 一時シートを削除してクリーンアップ
+    try {
+      spreadsheet.deleteSheet(tempSheet);
+      console.log('*** SERVER DEBUG: Temporary sheet cleaned up ***');
+    } catch (e) {
+      console.warn('*** SERVER DEBUG: Failed to cleanup temp sheet:', e.message);
+    }
+    
+    // 完了結果を返す
+    return {
+      success: true,
+      completed: true,
+      processId: `direct_process_${new Date().getTime()}`,
+      message: '処理が完了しました',
+      result: detectResult,
+      stats: {
+        totalRows: copiedRows,
+        duplicatesFound: detectResult?.duplicateCount || 0
+      }
+    };
+    
+  } catch (error) {
+    console.error('startChunkedAutoProcessFromStorage エラー:', error);
+    return {
+      success: false,
+      message: `保存データからの処理開始に失敗しました: ${error.message}`
+    };
+  }
+}
+
+/**
+ * 分割処理による自動処理開始（UIから呼び出される）
+ */
+function startChunkedAutoProcessFromUI(csvData) {
+  try {
+    console.log('*** SERVER DEBUG: startChunkedAutoProcessFromUI called ***');
+    console.log('*** SERVER DEBUG: csvData length:', csvData ? csvData.length : 'null');
+    console.log('分割処理による自動処理開始');
+    const result = ChunkedProcessor.startChunkedAutoProcess(csvData);
+    console.log('*** SERVER DEBUG: ChunkedProcessor returned:', result);
+    return result;
+  } catch (error) {
+    console.error('startChunkedAutoProcessFromUI エラー:', error);
+    return {
+      success: false,
+      message: `分割処理の開始に失敗しました: ${error.message}`
+    };
+  }
+}
+
+/**
+ * 分割処理の続行（UIから呼び出される）
+ */
+function continueChunkedProcess(processId) {
+  try {
+    console.log(`分割処理続行: ${processId}`);
+    return ChunkedProcessor.executeNextPhase(processId);
+  } catch (error) {
+    console.error('continueChunkedProcess エラー:', error);
+    return {
+      success: false,
+      message: `分割処理の続行に失敗しました: ${error.message}`,
+      processId: processId
+    };
+  }
+}
+
+/**
+ * 分割処理の状態確認（UIから呼び出される）
+ */
+function getChunkedProcessStatus(processId) {
+  try {
+    const state = ChunkedProcessor.getState(processId);
+    if (!state) {
+      return {
+        success: false,
+        message: '処理状態が見つかりません'
+      };
+    }
+    
+    return {
+      success: true,
+      processId: processId,
+      phase: state.phase,
+      currentPhase: state.currentPhase,
+      totalPhases: state.totalPhases,
+      progress: Math.round((state.currentPhase / state.totalPhases) * 100),
+      completed: state.completed,
+      error: state.error
+    };
+  } catch (error) {
+    console.error('getChunkedProcessStatus エラー:', error);
+    return {
+      success: false,
+      message: `状態確認に失敗しました: ${error.message}`
+    };
   }
 }
 
