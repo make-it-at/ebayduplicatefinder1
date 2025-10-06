@@ -8,7 +8,7 @@
 var EbayTool = (function() {
   // プライベート変数と定数
   const CONFIG = {
-    VERSION: '1.6.47',
+    VERSION: '1.6.48',
     SHEET_NAMES: {
       IMPORT: 'インポートデータ',
       DUPLICATES: '重複リスト',
@@ -1773,10 +1773,11 @@ function filterUSOnly() {
 
       return {
         success: true,
-        message: `US絞り込み完了: ${originalRowCount}件 → ${filteredRowCount}件 (${deletedCount}行削除)`,
+        message: `US絞り込み完了: ${originalRowCount}件 → ${filteredRowCount}件 (${deletedCount}行削除) - ${elapsedSeconds}秒`,
         originalCount: originalRowCount,
         filteredCount: filteredRowCount,
-        deletedCount: deletedCount
+        deletedCount: deletedCount,
+        elapsedSeconds: parseFloat(elapsedSeconds)
       };
 
     } catch (filterError) {
@@ -1802,12 +1803,15 @@ function filterUSOnly() {
       const filteredRowCount = newLastRow - 1;
       const deletedCount = originalRowCount - filteredRowCount;
 
+      const elapsedSeconds = ((new Date().getTime() - startTime) / 1000).toFixed(1);
+
       return {
         success: true,
-        message: `US絞り込み完了: ${originalRowCount}件 → ${filteredRowCount}件 (${deletedCount}行削除)`,
+        message: `US絞り込み完了: ${originalRowCount}件 → ${filteredRowCount}件 (${deletedCount}行削除) - ${elapsedSeconds}秒`,
         originalCount: originalRowCount,
         filteredCount: filteredRowCount,
-        deletedCount: deletedCount
+        deletedCount: deletedCount,
+        elapsedSeconds: parseFloat(elapsedSeconds)
       };
     }
 

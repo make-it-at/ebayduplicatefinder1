@@ -4,7 +4,7 @@
  */
 
 // 単一の真実の源（Single Source of Truth）
-const PROJECT_VERSION = '1.6.47';
+const PROJECT_VERSION = '1.6.48';
 
 // バージョン情報を取得する関数
 function getProjectVersion() {
