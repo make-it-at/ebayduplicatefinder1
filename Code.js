@@ -8,7 +8,7 @@
 var EbayTool = (function() {
   // プライベート変数と定数
   const CONFIG = {
-    VERSION: '1.6.46',
+    VERSION: '1.6.47',
     SHEET_NAMES: {
       IMPORT: 'インポートデータ',
       DUPLICATES: '重複リスト',
@@ -1692,60 +1692,57 @@ function filterUSOnly() {
     console.log(`📊 処理対象: ${lastRow - 1}行のデータ`);
     originalRowCount = lastRow - 1;
 
-    // チャンク処理による最適化（タイムアウト対策）
+    // 超高速処理（休憩時間最小化）
     try {
-      const CHUNK_SIZE = 5000; // 5000行ずつ処理
-      console.log(`📖 [${new Date().toLocaleTimeString()}] チャンク処理開始: ${lastRow}行を${CHUNK_SIZE}行ずつ処理`);
+      const CHUNK_SIZE = 10000; // 10000行ずつ処理（高速化）
+      console.log(`📖 [${new Date().toLocaleTimeString()}] 超高速処理開始: ${lastRow}行を${CHUNK_SIZE}行ずつ処理`);
 
       const rowsToDelete = [];
 
-      // チャンクごとに処理
+      // チャンクごとに処理（休憩なし）
       for (let chunkStart = 2; chunkStart <= lastRow; chunkStart += CHUNK_SIZE) {
         const chunkEnd = Math.min(chunkStart + CHUNK_SIZE - 1, lastRow);
         const chunkSize = chunkEnd - chunkStart + 1;
 
-        console.log(`📦 チャンク ${Math.floor((chunkStart - 2) / CHUNK_SIZE) + 1}: ${chunkStart}-${chunkEnd}行 (${chunkSize}行)`);
+        console.log(`📦 チャンク ${Math.floor((chunkStart - 2) / CHUNK_SIZE) + 1}: ${chunkStart}-${chunkEnd}行`);
 
-        // チャンクのデータを読み込み
-        const chunkData = importSheet.getRange(chunkStart, 1, chunkSize, lastCol).getValues();
+        // チャンクのデータを読み込み（サイト列のみ）
+        const chunkData = importSheet.getRange(chunkStart, listingSiteIndex + 1, chunkSize, 1).getValues();
 
         // 削除対象行を特定
         for (let i = 0; i < chunkData.length; i++) {
-          const siteValue = String(chunkData[i][listingSiteIndex]).trim().toUpperCase();
+          const siteValue = String(chunkData[i][0]).trim().toUpperCase();
           if (siteValue && siteValue !== 'US' && siteValue !== 'USA' && siteValue !== 'UNITED STATES') {
-            rowsToDelete.push(chunkStart + i); // 実際の行番号
+            rowsToDelete.push(chunkStart + i);
           }
-        }
-
-        // タイムアウト防止のため小休憩
-        if (chunkEnd < lastRow) {
-          Utilities.sleep(100);
         }
       }
 
       console.log(`🎯 削除対象特定完了: ${rowsToDelete.length}行を削除予定`);
 
-      // 連続行範囲の一括削除（超高速化 + タイムアウト対策）
+      // 連続行範囲の一括削除（超高速・休憩最小化）
       if (rowsToDelete.length > 0) {
         console.log(`📋 [${new Date().toLocaleTimeString()}] ${rowsToDelete.length}行を一括削除開始...`);
 
         // 連続する行範囲をグループ化
         const ranges = groupConsecutiveRows(rowsToDelete);
-        console.log(`📦 連続行範囲: ${ranges.length}グループに分割`);
+        console.log(`📦 連続行範囲: ${ranges.length}グループ`);
 
-        // 下から上へ一括削除（範囲ごと）
+        // 下から上へ一括削除（範囲ごと・休憩最小化）
         for (let i = ranges.length - 1; i >= 0; i--) {
           const range = ranges[i];
           const rowCount = range.end - range.start + 1;
 
-          console.log(`🗑️  範囲削除 [${i + 1}/${ranges.length}]: ${range.start}-${range.end}行 (${rowCount}行)`);
+          if (i % 50 === 0) {
+            console.log(`🗑️  削除進捗 [${ranges.length - i}/${ranges.length}]`);
+          }
 
           // 一括削除実行
           importSheet.deleteRows(range.start, rowCount);
 
-          // タイムアウト防止のため小休憩（100行ごと）
-          if (rowCount > 100 || i % 10 === 0) {
-            Utilities.sleep(100);
+          // 500行ごとまたは50グループごとにのみ休憩
+          if (rowCount > 500 || i % 50 === 0) {
+            Utilities.sleep(50);
           }
         }
 
